@@ -44,6 +44,7 @@ export interface UniversalBatchItem {
   hcWidth?: 0.35 | 0.60 | 1.20; // hollow core width in meters
   customPrice?: number | ""; // user pricing override
   customStandardRate?: number | ""; // user standard rate override
+  customUnitWeight?: number | ""; // user weight per piece override
   label?: string; // OCR text label or notes
 }
 
@@ -154,6 +155,7 @@ export default function UniversalBatchCalculator({
             updated.count = 10;
             updated.customPrice = "";
             updated.customStandardRate = "";
+            updated.customUnitWeight = "";
             
             if (cat === "slab") {
               updated.wireCount = "auto";
@@ -673,7 +675,14 @@ export default function UniversalBatchCalculator({
     }
 
     const rowPriceTotal = computedUnitPrice * qty;
-    const rowWeightTotal = baseWeightPerMeter * len * qty;
+    
+    // Support custom weight per piece override
+    const calculatedPieceWeight = baseWeightPerMeter * len;
+    const singlePieceWeight = item.customUnitWeight !== "" && item.customUnitWeight !== undefined && Number(item.customUnitWeight) >= 0
+      ? Number(item.customUnitWeight)
+      : calculatedPieceWeight;
+      
+    const rowWeightTotal = singlePieceWeight * qty;
 
     // Calc areas
     let areaMultiplier = 0;
@@ -729,7 +738,9 @@ export default function UniversalBatchCalculator({
         type: typeSlug,
         count: row.count === "" ? 1 : row.count,
         length: row.length === "" ? 2.0 : row.length,
-        unitWeight: row.unitWeight
+        unitWeight: row.customUnitWeight !== "" && row.customUnitWeight !== undefined && Number(row.customUnitWeight) >= 0
+          ? Number(row.customUnitWeight) / (row.length === "" || row.length === 0 ? 1 : row.length)
+          : row.unitWeight
       };
     });
 
@@ -1029,7 +1040,7 @@ export default function UniversalBatchCalculator({
 
             {/* Main Spreadsheet Scroll Container */}
             <div className="overflow-x-auto w-full border border-neutral-200/80 rounded-2xl shadow-sm bg-white">
-              <table className="w-full text-left border-collapse min-w-[850px]">
+              <table className="w-full text-left border-collapse min-w-[960px]">
                 <thead>
                   <tr className="bg-neutral-50/75 border-b border-neutral-200 text-xs font-bold text-neutral-600 uppercase tracking-wide">
                     <th className="py-3.5 px-4 w-[160px] font-semibold">หมวดหมู่สินค้า</th>
@@ -1037,6 +1048,7 @@ export default function UniversalBatchCalculator({
                     <th className="py-3.5 px-3 w-[75px] text-center font-semibold">ยาว (ม.)</th>
                     <th className="py-3.5 px-3 w-[70px] text-center font-semibold">จำนวน</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
+                    <th className="py-3.5 px-4 w-[120px] text-center font-semibold">นน./ชิ้น (กก.)</th>
                     <th className="py-3.5 px-4 w-[130px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
                     <th className="py-3.5 px-3 w-[50px] text-center"></th>
@@ -1045,7 +1057,7 @@ export default function UniversalBatchCalculator({
                 <tbody className="divide-y divide-neutral-100 text-xs">
                   {calculatedRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-neutral-400">
+                      <td colSpan={9} className="py-12 text-center text-neutral-400">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <FileSpreadsheet size={28} className="text-neutral-300" />
                           <span className="font-medium text-sm text-neutral-500">ไม่พบข้อมูลในตาราง</span>
@@ -1199,6 +1211,21 @@ export default function UniversalBatchCalculator({
                               ริ้วปกติ
                             </span>
                           )}
+                        </td>
+
+                        {/* นน.ต่อชิ้น (กก.) */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center gap-1 justify-center w-full min-w-[120px]">
+                            <input
+                              type="number"
+                              value={row.customUnitWeight ?? ""}
+                              onChange={(e) => editLineItem(row.id, "customUnitWeight", e.target.value === "" ? "" : parseFloat(e.target.value))}
+                              placeholder={fmt(row.unitWeight * (row.length === "" ? 0 : row.length))}
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none text-neutral-850"
+                              title="กำหนดน้ำหนักต่อชิ้นเอง (กิโลกรัม) หรือปล่อยว่างเพื่อใช้ตามสูตรทั่วไป"
+                            />
+                            <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">กก.</span>
+                          </div>
                         </td>
 
                         {/* ราคาตั้ง (ต่อ ตร.ม. หรือเมตร) */}
