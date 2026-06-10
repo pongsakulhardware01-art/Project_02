@@ -65,6 +65,38 @@ async function startServer() {
       fence4Price: 75,
       hcPriceSqm: 655,
       vatPercent: 7,
+      // Pipe and Basin Prices
+      pipe030NoTISPrice: 130,
+      pipe030T3Price: 160,
+      pipe030T2Price: 180,
+      pipe040NoTISPrice: 190,
+      pipe040T3Price: 240,
+      pipe040T2Price: 270,
+      pipe050NoTISPrice: 280,
+      pipe050T3Price: 360,
+      pipe050T2Price: 400,
+      pipe060NoTISPrice: 380,
+      pipe060T3Price: 500,
+      pipe060T2Price: 560,
+      pipe080NoTISPrice: 750,
+      pipe080T3Price: 980,
+      pipe080T2Price: 1100,
+      pipe100NoTISPrice: 1200,
+      pipe100T3Price: 1550,
+      pipe100T2Price: 1750,
+      pipe120NoTISPrice: 1800,
+      pipe120T3Price: 2300,
+      pipe120T2Price: 2600,
+      pipe150NoTISPrice: 3200,
+      pipe150T3Price: 4000,
+      pipe150T2Price: 4500,
+      basin030Price: 350,
+      basin040Price: 500,
+      basin050Price: 750,
+      basin060Price: 1100,
+      basin080Price: 2200,
+      basin100Price: 3400,
+      basin120Price: 4900,
     },
     weights: {
       slab: 42.0,
@@ -90,6 +122,38 @@ async function startServer() {
       s30: 216.0,
       s35: 294.0,
       s40: 384.0,
+      // Pipe and Basin Weights
+      pipe030Weight: 120,
+      pipe030T3Weight: 140,
+      pipe030T2Weight: 145,
+      pipe040Weight: 200,
+      pipe040T3Weight: 220,
+      pipe040T2Weight: 225,
+      pipe050Weight: 252,
+      pipe050T3Weight: 320,
+      pipe050T2Weight: 325,
+      pipe060Weight: 335,
+      pipe060T3Weight: 412,
+      pipe060T2Weight: 417,
+      pipe080Weight: 650,
+      pipe080T3Weight: 700,
+      pipe080T2Weight: 750,
+      pipe100Weight: 900,
+      pipe100T3Weight: 1000,
+      pipe100T2Weight: 1000,
+      pipe120Weight: 1250,
+      pipe120T3Weight: 1305,
+      pipe120T2Weight: 1310,
+      pipe150Weight: 1870,
+      pipe150T3Weight: 1870,
+      pipe150T2Weight: 1870,
+      basin030Weight: 400,
+      basin040Weight: 600,
+      basin050Weight: 785,
+      basin060Weight: 1000,
+      basin080Weight: 1955,
+      basin100Weight: 2000,
+      basin120Weight: 2875,
     }
   };
 
@@ -432,13 +496,16 @@ async function startServer() {
       };
 
       const systemInstruction = 
-        "You are an expert material estimator specializing in precast concrete products (แผ่นพื้นสำเร็จรูป, เสาเข็ม, แผ่นกลวง, เสารั้ว) for construction projects. " +
+        "You are an expert material estimator specializing in precast concrete products (แผ่นพื้นสำเร็จรูป, เสาเข็ม, แผ่นกลวง, เสารั้ว, ท่อระบายน้ำ คสล., บ่อพัก คสล.) for construction projects. " +
         "Your task is to analyze the image (handwritten note, table screenshot, quotation bill) and extract ALL concrete items. " +
         "Support Categories & Models:\n" +
         "1. Category 'slab': precast concrete slabs. Model: 'normal' (แผ่นพื้นธรรมดา) or 'm.o.c' (แผ่นพื้น มอก.). Attributes: length (meters), count (quantity), wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto').\n" +
         "2. Category 'pile': prestressed concrete piles. Model: 'i15', 'i18', 'i22', 'i26', 'i30' (เสาเข็มไอ), 's18', 's22', 's26', 's30', 's35', 's40' (เสาสี่เหลี่ยมตัน), 'hex' (หกเหลี่ยม), 'fence3' (เสารั้ว 3 นิ้ว), 'fence4' (เสารั้ว 4 นิ้ว). Attributes: length (meters), count (quantity), tisStandard ('tis' or 'no_tis'), connectionType ('single' or 'joint' - only for i18 and i22).\n" +
         "3. Category 'hollow_core': precast hollow core slabs. Model: 'hc'. Attributes: length (meters), count (quantity), thickness (optional).\n" +
         "4. Category 'fence': fence posts. Model: 'fence3' (หน้า 3\" นิ้ว) or 'fence4' (หน้า 4\" นิ้ว). Attributes: length (meters), count (quantity).\n" +
+        "5. Category 'drainage': concrete pipes (ท่อระบายน้ำ คสล.) and catch basins (บ่อพัก คสล.). \n" +
+        "   - Pipes: Model MUST be 'pipe030' (30cm / 0.30m), 'pipe040' (40cm), 'pipe050' (50cm), 'pipe060' (60cm), 'pipe080' (80cm), 'pipe100' (100cm), 'pipe120' (120cm), 'pipe150' (150cm). Set tisStandard to 't2' (for มอก.ชั้น 2), 't3' (for มอก.ชั้น 3), or 'no_tis' (ปกติ/คสล.).\n" +
+        "   - Catch basins: Model MUST be 'basin030' (for pipe 30cm), 'basin040', 'basin050', 'basin060', 'basin080', 'basin100', 'basin120'. Length of drainage is 1.0.\n" +
         "Ignore other construction materials (sand, cement bricks, steel rebars, labor fees) and only extract precast concrete elements manufactured by Pongsakul.";
 
       const prompt = 
@@ -467,11 +534,11 @@ async function startServer() {
                       properties: {
                         category: {
                           type: Type.STRING,
-                          description: "ประเภทหลัก: 'slab', 'pile', 'hollow_core', หรือ 'fence'"
+                          description: "ประเภทหลัก: 'slab', 'pile', 'hollow_core', 'fence', หรือ 'drainage'"
                         },
                         model: {
                           type: Type.STRING,
-                          description: "รุ่นโมเดล: สำหรับ slab ('normal','m.o.c'), สำหรับ pile ('i15','i18','i22','i26','i30','s18','s22','s26','s30','s35','s40','hex','fence3','fence4'), สำหรับ hollow_core ('hc'), สำหรับ fence ('fence3','fence4')"
+                          description: "รุ่นโมเดล: สำหรับ slab ('normal','m.o.c'), สำหรับ pile ('i15','i18','i22','i26','i30','s18','s22','s26','s30','s35','s40','hex','fence3','fence4'), สำหรับ hollow_core ('hc'), สำหรับ fence ('fence3','fence4'), สำหรับ drainage ('pipe030','pipe040','pipe050','pipe060','pipe080','pipe100','pipe120','pipe150','basin030','basin040','basin050','basin060','basin080','basin100','basin120')"
                         },
                         length: {
                           type: Type.NUMBER,
@@ -487,7 +554,7 @@ async function startServer() {
                         },
                         tisStandard: {
                           type: Type.STRING,
-                          description: "มาตรฐานการรองรับสำหรับเสาเข็ม/แผ่นพื้น: 'tis' (มอก.) หรือ 'no_tis' (ปกติ/สามัญ)"
+                          description: "มาตรฐานการรองรับ: สำหรับเสาเข็ม/แผ่นพื้น: 'tis' หรือ 'no_tis'. สำหรับ drainage คสล./ท่อ: 'no_tis' (ปกติ), 't3' (มอก.3), หรือ 't2' (มอก.2)"
                         },
                         connectionType: {
                           type: Type.STRING,
@@ -560,6 +627,9 @@ async function startServer() {
         "2. Category 'pile': precast concrete piles. Model could be I-shape: 'i15', 'i18', 'i22', 'i26', 'i30' OR Solid Square: 's18', 's22', 's26', 's30', 's35', 's40' OR 'hex' (เสาเข็มหกเหลี่ยม) OR fence posts ('fence3', 'fence4'). Detect tisStandard ('tis' / 'no_tis') and connectionType ('single' / 'joint' for i18,i22 if mentioned).\n" +
         "3. Category 'hollow_core': hollow core slabs (แผ่นกลวง). Model: 'hc'.\n" +
         "4. Category 'fence': fence post. Model: 'fence3' (3 นิ้ว) or 'fence4' (4 นิ้ว).\n" +
+        "5. Category 'drainage': concrete drainage pipes (ท่อระบายน้ำ คสล., ท่อระบายน้ำ มอก.) and catch basins (บ่อพัก คสล.).\n" +
+        "   - Pipes: Model MUST be 'pipe030' (diameter 30cm or 0.30m), 'pipe040', 'pipe050', 'pipe060', 'pipe080', 'pipe100', 'pipe120', 'pipe150'. Set tisStandard to 't2' (for มอก.ชั้น 2), 't3' (for มอก.ชั้น 3), or 'no_tis'.\n" +
+        "   - Catch basins: Model MUST be 'basin030', 'basin040', 'basin050', 'basin060', 'basin080', 'basin100', 'basin120'. Length of drainage defaults to 1.0.\n" +
         "Extract attributes strictly: category, model, length (in meters as numeric), count (quantity), wireCount, connectionType, tisStandard, optional customPrice/rate if listed directly, and label in Thai.";
 
       const prompt = 

@@ -34,12 +34,12 @@ interface UniversalBatchCalculatorProps {
 
 export interface UniversalBatchItem {
   id: string;
-  category: "slab" | "pile" | "hollow_core" | "fence";
-  model: string; // normal, m.o.c, i15, i18, i22, i26, i30, s18, s22, s26, s30, s35, s40, hex, hc, fence3, fence4
+  category: "slab" | "pile" | "hollow_core" | "fence" | "drainage";
+  model: string; // normal, m.o.c, i15, i18, i22, i26, i30, s18, s22, s26, s30, s35, s40, hex, hc, fence3, fence4, pipe*, basin*
   length: number | "";
   count: number | "";
   wireCount?: "4" | "5" | "6" | "7" | "8" | "5_mm_5" | "auto"; // only for slabs
-  tisStandard?: "tis" | "no_tis"; // pile/slab standard
+  tisStandard?: "tis" | "no_tis" | "t2" | "t3"; // pile/slab/drainage standard
   connectionType?: "single" | "joint"; // pile connection
   hcWidth?: 0.35 | 0.60 | 1.20; // hollow core width in meters
   customPrice?: number | ""; // user pricing override
@@ -117,12 +117,12 @@ export default function UniversalBatchCalculator({
     return () => window.removeEventListener("storage_round_price", syncVal);
   }, []);
 
-  const addNewLineItem = (category: "slab" | "pile" | "hollow_core" | "fence") => {
+  const addNewLineItem = (category: "slab" | "pile" | "hollow_core" | "fence" | "drainage") => {
     const newItem: UniversalBatchItem = {
       id: Math.random().toString(36).substring(2, 9),
       category,
-      model: category === "slab" ? "normal" : category === "hollow_core" ? "hc" : category === "pile" ? "i18" : "fence3",
-      length: category === "slab" ? 2.5 : category === "hollow_core" ? 4.0 : category === "pile" ? 6.0 : 3.0,
+      model: category === "slab" ? "normal" : category === "hollow_core" ? "hc" : category === "pile" ? "i18" : category === "drainage" ? "pipe030" : "fence3",
+      length: category === "slab" ? 2.5 : category === "hollow_core" ? 4.0 : category === "pile" ? 6.0 : category === "drainage" ? 1.0 : 3.0,
       count: 10,
       customPrice: "",
       customStandardRate: "",
@@ -137,6 +137,8 @@ export default function UniversalBatchCalculator({
       newItem.connectionType = "single";
     } else if (category === "hollow_core") {
       newItem.hcWidth = 0.35;
+    } else if (category === "drainage") {
+      newItem.tisStandard = "no_tis";
     }
 
     setItems((prev) => [...prev, newItem]);
@@ -149,9 +151,9 @@ export default function UniversalBatchCalculator({
           const updated = { ...item, [key]: value };
           
           if (key === "category") {
-            const cat = value as "slab" | "pile" | "hollow_core" | "fence";
-            updated.model = cat === "slab" ? "normal" : cat === "hollow_core" ? "hc" : cat === "pile" ? "i18" : "fence3";
-            updated.length = cat === "slab" ? 2.5 : cat === "hollow_core" ? 4.0 : cat === "pile" ? 6.0 : 3.0;
+            const cat = value as "slab" | "pile" | "hollow_core" | "fence" | "drainage";
+            updated.model = cat === "slab" ? "normal" : cat === "hollow_core" ? "hc" : cat === "pile" ? "i18" : cat === "drainage" ? "pipe030" : "fence3";
+            updated.length = cat === "slab" ? 2.5 : cat === "hollow_core" ? 4.0 : cat === "pile" ? 6.0 : cat === "drainage" ? 1.0 : 3.0;
             updated.count = 10;
             updated.customPrice = "";
             updated.customStandardRate = "";
@@ -176,6 +178,11 @@ export default function UniversalBatchCalculator({
               delete updated.wireCount;
               delete updated.connectionType;
               delete updated.tisStandard;
+              delete updated.hcWidth;
+            } else if (cat === "drainage") {
+              updated.tisStandard = "no_tis";
+              delete updated.wireCount;
+              delete updated.connectionType;
               delete updated.hcWidth;
             }
           }
@@ -327,12 +334,12 @@ export default function UniversalBatchCalculator({
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      let category: "slab" | "pile" | "hollow_core" | "fence" = "slab";
+      let category: "slab" | "pile" | "hollow_core" | "fence" | "drainage" = "slab";
       let model = "normal";
       let length: number | "" = 2.0;
       let count: number | "" = 10;
       let wireCount: "4" | "5" | "6" | "7" | "8" | "5_mm_5" | "auto" = "auto";
-      let tisStandard: "tis" | "no_tis" = "no_tis";
+      let tisStandard: "tis" | "no_tis" | "t2" | "t3" = "no_tis";
       let connectionType: "single" | "joint" = "single";
       let hcWidth: 0.35 | 0.60 | 1.20 = 0.35;
       let label = trimmed;
@@ -346,10 +353,35 @@ export default function UniversalBatchCalculator({
         model = "hc";
         if (/0\.60|0\.6/i.test(trimmed)) hcWidth = 0.60;
         else if (/1\.20|1\.2/i.test(trimmed)) hcWidth = 1.20;
+      } else if (/ท่อระบายน้ำคสล\.|ท่อระบายน้ำ|ท่อ|ระบายน้ำ|บ่อพัก|ปากบ่อ/i.test(trimmed)) {
+        category = "drainage";
+        const isBasin = /บ่อ|บ่อพัก/i.test(trimmed);
+        
+        let sizeCode = "030";
+        if (/30|0\.3/i.test(trimmed)) sizeCode = "030";
+        else if (/40|0\.4/i.test(trimmed)) sizeCode = "040";
+        else if (/50|0\.5/i.test(trimmed)) sizeCode = "050";
+        else if (/60|0\.6/i.test(trimmed)) sizeCode = "060";
+        else if (/80|0\.8/i.test(trimmed)) sizeCode = "080";
+        else if (/100|1\.0|1ม/i.test(trimmed)) sizeCode = "100";
+        else if (/120|1\.2/i.test(trimmed)) sizeCode = "120";
+        else if (/150|1\.5/i.test(trimmed)) sizeCode = "150";
+
+        if (isBasin) {
+          model = `basin${sizeCode}`;
+          tisStandard = "no_tis";
+        } else {
+          model = `pipe${sizeCode}`;
+          if (/มอก\.?\s*2|ชั้น\s*2|มอก2/i.test(trimmed)) {
+            tisStandard = "t2";
+          } else if (/มอก\.?\s*3|ชั้น\s*3|มอก3/i.test(trimmed)) {
+            tisStandard = "t3";
+          } else {
+            tisStandard = "no_tis";
+          }
+        }
+        length = 1.0;
       } else if (/เสารั้ว|หน้า\s*3|หน้า\s*4|รั้วหน้า|เสาเข็มรั้ว/i.test(trimmed)) {
-        category = "pile";
-        model = /หน้า\s*4|4"\s*นิ้ว|4\s*นิ้ว/i.test(trimmed) ? "fence4" : "fence3";
-      } else if (/เสาเข็ม|เสาไอ|เสา\s*i|เสาหกเหลี่ยม|หกเหลี่ยม|i-15|i-18|i-22|i-26|i-30|s18|s22|s26|s30|s35|s40|s-18|s-22|s-26|s-30|s-35|s-40/i.test(trimmed)) {
         category = "pile";
         
         // Find specific Pile Model
@@ -681,9 +713,32 @@ export default function UniversalBatchCalculator({
       baseWeightPerMeter = settings.weights.slab * 2; // hollow core base weights
       standardRateUnit = "ตร.ม.";
       defaultStandardRate = settings.prices.hcPriceSqm;
+
+    // DRAINAGE CATEGORY
+    } else if (item.category === "drainage") {
+      const pType = item.model;
+      const isPipe = pType.startsWith("pipe");
+      const subType = item.tisStandard || "no_tis";
+      standardRateUnit = "ชื้น";
+
+      if (isPipe) {
+        const sizeStr = pType.replace("pipe", "");
+        const priceKey = `pipe${sizeStr}${subType === "no_tis" ? "NoTIS" : (subType === "t3" ? "T3" : "T2")}Price`;
+        const weightKey = `pipe${sizeStr}${subType === "no_tis" ? "" : (subType === "t3" ? "T3" : "T2")}Weight`;
+
+        defaultStandardRate = (settings.prices as any)[priceKey] || 0;
+        baseWeightPerMeter = (settings.weights as any)[weightKey] || 0;
+      } else {
+        const sizeStr = pType.replace("basin", "");
+        const priceKey = `basin${sizeStr}Price`;
+        const weightKey = `basin${sizeStr}Weight`;
+
+        defaultStandardRate = (settings.prices as any)[priceKey] || 0;
+        baseWeightPerMeter = (settings.weights as any)[weightKey] || 0;
+      }
     }
 
-    // Resolve active standard rate per m/sqm
+    // Resolve active standard rate per m/sqm/piece
     const standardRate = item.category === "slab"
       ? defaultStandardRate
       : (item.customStandardRate !== undefined && item.customStandardRate !== "" && Number(item.customStandardRate) >= 0
@@ -697,6 +752,8 @@ export default function UniversalBatchCalculator({
     } else if (item.category === "hollow_core") {
       const hcWidthVal = item.hcWidth || 0.35;
       rawUnitPriceOfProduct = standardRate * hcWidthVal * len;
+    } else if (item.category === "drainage") {
+      rawUnitPriceOfProduct = standardRate; // Drainage is priced per piece!
     } else {
       rawUnitPriceOfProduct = standardRate * len;
     }
@@ -716,7 +773,7 @@ export default function UniversalBatchCalculator({
       ? Number(item.customWeightPerMeter)
       : baseWeightPerMeter;
       
-    const rowWeightTotal = finalWeightPerMeter * len * qty;
+    const rowWeightTotal = finalWeightPerMeter * (item.category === "drainage" ? 1 : len) * qty;
 
     // Calc areas
     let areaMultiplier = 0;
@@ -765,6 +822,14 @@ export default function UniversalBatchCalculator({
         else typeSlug = "i18_no_tis";
       } else if (row.category === "hollow_core") {
         typeSlug = "slab"; // fallback weight
+      } else if (row.category === "drainage") {
+        const pType = row.model;
+        const subType = row.tisStandard || "no_tis";
+        if (pType.startsWith("pipe")) {
+          typeSlug = `${pType}${subType === "no_tis" ? "" : (subType === "t3" ? "_t3" : "_t2")}`;
+        } else {
+          typeSlug = pType; // e.g. basin030
+        }
       }
 
       return {
@@ -792,6 +857,7 @@ export default function UniversalBatchCalculator({
       case "slab": return "แผ่นพื้นสำเร็จรูป";
       case "pile": return "เสาเข็มคอนกรีต / เสารั้ว";
       case "hollow_core": return "แผ่นรูกลวง (Hollow Core)";
+      case "drainage": return "ท่อระบายน้ำ / บ่อพัก";
       default: return "สินค้าพงษ์สกุล";
     }
   };
@@ -802,7 +868,7 @@ export default function UniversalBatchCalculator({
     }
     if (category === "hollow_core") return "รูกลวง Hollow Core";
     
-    // Piles
+    // Piles & Drainage
     switch (model) {
       case "i15": return "เสาเข็มไอ I-15";
       case "i18": return "เสาเข็มไอ I-18";
@@ -818,6 +884,24 @@ export default function UniversalBatchCalculator({
       case "hex": return "หกเหลี่ยมกลวง";
       case "fence3": return "เสารั้วลวดหนาม 3\"";
       case "fence4": return "เสารั้วลวดหนาม 4\"";
+      case "pipe": return "ท่อระบายน้ำ คสล.";
+      case "basin": return "บ่อพัก คสล.";
+      // Drainage mappings:
+      case "pipe030": return "ท่อระบายน้ำ Ø 0.30 ม.";
+      case "pipe040": return "ท่อระบายน้ำ Ø 0.40 ม.";
+      case "pipe050": return "ท่อระบายน้ำ Ø 0.50 ม.";
+      case "pipe060": return "ท่อระบายน้ำ Ø 0.60 ม.";
+      case "pipe080": return "ท่อระบายน้ำ Ø 0.80 ม.";
+      case "pipe100": return "ท่อระบายน้ำ Ø 1.00 ม.";
+      case "pipe120": return "ท่อระบายน้ำ Ø 1.20 ม.";
+      case "pipe150": return "ท่อระบายน้ำ Ø 1.50 ม.";
+      case "basin030": return "บ่อพักท่อ Ø 0.30 ม.";
+      case "basin040": return "บ่อพักท่อ Ø 0.40 ม.";
+      case "basin050": return "บ่อพักท่อ Ø 0.50 ม.";
+      case "basin060": return "บ่อพักท่อ Ø 0.60 ม.";
+      case "basin080": return "บ่อพักท่อ Ø 0.80 ม.";
+      case "basin100": return "บ่อพักท่อ Ø 1.00 ม.";
+      case "basin120": return "บ่อพักท่อ Ø 1.20 ม.";
       default: return model;
     }
   };
@@ -1069,6 +1153,12 @@ export default function UniversalBatchCalculator({
                 >
                   <Plus size={12} /> แผ่นรูกลวง
                 </button>
+                <button
+                  onClick={() => addNewLineItem("drainage")}
+                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition"
+                >
+                  <Plus size={12} /> ท่อระบายน้ำ/บ่อพัก
+                </button>
               </div>
             </div>
 
@@ -1112,6 +1202,7 @@ export default function UniversalBatchCalculator({
                             <option value="slab">แผ่นพื้นสำเร็จ</option>
                             <option value="pile">เสาเข็ม / รั้ว</option>
                             <option value="hollow_core">แผ่นรูกลวง HC</option>
+                            <option value="drainage">ท่อระบายน้ำ / บ่อพัก</option>
                           </select>
                         </td>
 
@@ -1161,6 +1252,34 @@ export default function UniversalBatchCalculator({
                             <span className="p-2 bg-neutral-50 border border-neutral-100 rounded-xl text-neutral-500 font-medium text-xs block text-center">
                               หน้ากลวงรูกลม HC
                             </span>
+                          )}
+
+                          {row.category === "drainage" && (
+                            <select
+                              value={row.model}
+                              onChange={(e) => editLineItem(row.id, "model", e.target.value)}
+                              className="p-2 bg-[#FAF7F6] hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            >
+                              <optgroup label="ท่อระบายน้ำ คสล.">
+                                <option value="pipe030">ท่อระบายน้ำ Ø 0.30 ม.</option>
+                                <option value="pipe040">ท่อระบายน้ำ Ø 0.40 ม.</option>
+                                <option value="pipe050">ท่อระบายน้ำ Ø 0.50 ม.</option>
+                                <option value="pipe060">ท่อระบายน้ำ Ø 0.60 ม.</option>
+                                <option value="pipe080">ท่อระบายน้ำ Ø 0.80 ม.</option>
+                                <option value="pipe100">ท่อระบายน้ำ Ø 1.00 ม.</option>
+                                <option value="pipe120">ท่อระบายน้ำ Ø 1.20 ม.</option>
+                                <option value="pipe150">ท่อระบายน้ำ Ø 1.50 ม.</option>
+                              </optgroup>
+                              <optgroup label="บ่อพักท่อระบายน้ำ">
+                                <option value="basin030">บ่อพักท่อ Ø 0.30 ม.</option>
+                                <option value="basin040">บ่อพักท่อ Ø 0.40 ม.</option>
+                                <option value="basin050">บ่อพักท่อ Ø 0.50 ม.</option>
+                                <option value="basin060">บ่อพักท่อ Ø 0.60 ม.</option>
+                                <option value="basin080">บ่อพักท่อ Ø 0.80 ม.</option>
+                                <option value="basin100">บ่อพักท่อ Ø 1.00 ม.</option>
+                                <option value="basin120">บ่อพักท่อ Ø 1.20 ม.</option>
+                              </optgroup>
+                            </select>
                           )}
                         </td>
 
@@ -1237,6 +1356,26 @@ export default function UniversalBatchCalculator({
                               <option value={0.60}>กว้าง 0.60 ม.</option>
                               <option value={1.20}>กว้าง 1.20 ม.</option>
                             </select>
+                          )}
+
+                          {row.category === "drainage" && (
+                            <div className="min-w-[124px]">
+                              {row.model.startsWith("pipe") ? (
+                                <select
+                                  value={row.tisStandard || "no_tis"}
+                                  onChange={(e) => editLineItem(row.id, "tisStandard", e.target.value)}
+                                  className="p-2 bg-[#FAF7F6] hover:bg-white border border-neutral-200/85 rounded-xl text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none font-semibold text-neutral-700 font-sans"
+                                >
+                                  <option value="no_tis">คสล. ปกติ</option>
+                                  <option value="t3">มอก. ชั้น 3</option>
+                                  <option value="t2">มอก. ชั้น 2</option>
+                                </select>
+                              ) : (
+                                <span className="text-xs text-neutral-400 font-medium text-center block w-full py-2 bg-neutral-50 rounded-xl border border-dotted border-neutral-200">
+                                  บ่อพักสำเร็จรูป
+                                </span>
+                              )}
+                            </div>
                           )}
 
                           {/* Fallback space for others */}

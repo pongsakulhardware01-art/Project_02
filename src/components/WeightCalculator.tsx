@@ -47,7 +47,8 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
   const calculateItemWeight = (item: WeightItem): number => {
     const rawWPerMeter = item.unitWeight !== undefined ? item.unitWeight : getWeightPerMeter(item.type);
     const wPerMeter = rawWPerMeter === "" ? 0 : rawWPerMeter;
-    const len = item.length === "" ? 0 : item.length;
+    const isPerPieceItem = item.type.startsWith("pipe") || item.type.startsWith("basin");
+    const len = isPerPieceItem ? 1.0 : (item.length === "" ? 0 : item.length);
     const cnt = item.count === "" ? 0 : item.count;
     return wPerMeter * len * cnt;
   };
@@ -98,11 +99,15 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
                 </div>
               ) : (
                 items.map((item, index) => {
+                  const isPerPieceItem = item.type.startsWith("pipe") || item.type.startsWith("basin");
                   const rawWPerMeter = item.unitWeight !== undefined ? item.unitWeight : getWeightPerMeter(item.type);
                   const wPerMeter = rawWPerMeter === "" ? 0 : rawWPerMeter;
-                  const itemLen = item.length === "" ? 0 : item.length;
+                  const itemLen = isPerPieceItem ? 1.0 : (item.length === "" ? 0 : item.length);
                   const itemCnt = item.count === "" ? 0 : item.count;
                   const itemWeight = wPerMeter * itemLen * itemCnt;
+
+                  const unitText = item.type.startsWith("pipe") ? "กก./ท่อน" : (item.type.startsWith("basin") ? "กก./บ่อ" : "กก./ม.");
+
                   return (
                     <motion.div
                       key={item.id}
@@ -152,45 +157,56 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
                       {/* Controls rows for Count & Length */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-neutral-150/65 pt-3">
                         {/* Length selector with - / + */}
-                        <div className="flex flex-col gap-1">
-                          <span className="text-xs text-neutral-500 font-semibold">ความยาวต่อหน่วย (เมตร)</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => adjustLength(item.id, item.length, -0.5)}
-                              className="w-8 h-8 flex items-center justify-center bg-white border border-neutral-200 rounded-lg active:bg-neutral-100"
-                            >
-                              <Minus size={14} />
-                            </button>
-                            <input
-                              type="number"
-                              value={item.length}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                updateItem(item.id, "length", val === "" ? "" : parseFloat(val));
-                              }}
-                              step="0.1"
-                              className="w-16 text-center border-0 bg-white py-1.5 text-sm font-semibold text-neutral-800 rounded-lg"
-                              placeholder="0"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => adjustLength(item.id, item.length, 0.5)}
-                              className="w-8 h-8 flex items-center justify-center bg-white border border-neutral-200 rounded-lg active:bg-neutral-100"
-                            >
-                              <Plus size={14} />
-                            </button>
-                            {/* Fast additions */}
-                            <div className="flex gap-1 pl-1">
+                        {!isPerPieceItem ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-neutral-500 font-semibold">ความยาวต่อหน่วย (เมตร)</span>
+                            <div className="flex items-center gap-2">
                               <button
-                                onClick={() => adjustLength(item.id, item.length, 1.0)}
-                                className="text-[10px] bg-neutral-200 text-neutral-600 font-medium py-1 px-1.5 rounded active:bg-neutral-300"
+                                type="button"
+                                onClick={() => adjustLength(item.id, item.length, -0.5)}
+                                className="w-8 h-8 flex items-center justify-center bg-white border border-neutral-200 rounded-lg active:bg-neutral-100"
                               >
-                                +1ม
+                                <Minus size={14} />
                               </button>
+                              <input
+                                type="number"
+                                value={item.length}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateItem(item.id, "length", val === "" ? "" : parseFloat(val));
+                                }}
+                                step="0.1"
+                                className="w-16 text-center border-0 bg-white py-1.5 text-sm font-semibold text-neutral-800 rounded-lg"
+                                placeholder="0"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => adjustLength(item.id, item.length, 0.5)}
+                                className="w-8 h-8 flex items-center justify-center bg-white border border-neutral-200 rounded-lg active:bg-neutral-100"
+                              >
+                                <Plus size={14} />
+                              </button>
+                              {/* Fast additions */}
+                              <div className="flex gap-1 pl-1">
+                                <button
+                                  onClick={() => adjustLength(item.id, item.length, 1.0)}
+                                  className="text-[10px] bg-neutral-200 text-neutral-600 font-medium py-1 px-1.5 rounded active:bg-neutral-300"
+                                >
+                                  +1ม
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="flex flex-col justify-center bg-neutral-100 rounded-xl p-3 border border-neutral-200/50">
+                            <span className="text-xs font-bold text-neutral-700 flex items-center gap-1">
+                              <Info size={14} className="text-[#C62828]" /> คำนวณรายชิ้นโดยตรง
+                            </span>
+                            <span className="text-[10px] text-neutral-500 mt-0.5">
+                              คิดน้ำหนักมาตรฐานรายตัว (ท่อน / บ่อพัก) ไม่ต้องระบุความยาวเมตร
+                            </span>
+                          </div>
+                        )}
 
                         {/* Number selector with - / + */}
                         <div className="flex flex-col gap-1">
@@ -247,7 +263,7 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
                             className="w-16 px-1.5 py-0.5 text-center font-bold bg-white border border-neutral-200 rounded text-neutral-800 focus:outline-none focus:ring-1 focus:ring-red-200"
                             step="0.01"
                           />
-                          <span>กก./ม.</span>
+                          <span>{unitText}</span>
                           {item.unitWeight !== undefined && item.unitWeight !== getWeightPerMeter(item.type) && (
                             <button
                               onClick={() => {

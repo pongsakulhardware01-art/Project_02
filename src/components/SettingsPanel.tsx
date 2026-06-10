@@ -604,6 +604,83 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+
+            {/* Drainage Pipe Prices Group */}
+            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
+              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">กลุ่มท่อระบายน้ำ คสล. (บาท / ท่อน) 🌊</span>
+            </div>
+
+            {[
+              { size: "0.30", norm: "pipe030NoTISPrice", t3: "pipe030T3Price", t2: "pipe030T2Price" },
+              { size: "0.40", norm: "pipe040NoTISPrice", t3: "pipe040T3Price", t2: "pipe040T2Price" },
+              { size: "0.50", norm: "pipe050NoTISPrice", t3: "pipe050T3Price", t2: "pipe050T2Price" },
+              { size: "0.60", norm: "pipe060NoTISPrice", t3: "pipe060T3Price", t2: "pipe060T2Price" },
+              { size: "0.80", norm: "pipe080NoTISPrice", t3: "pipe080T3Price", t2: "pipe080T2Price" },
+              { size: "1.00", norm: "pipe100NoTISPrice", t3: "pipe100T3Price", t2: "pipe100T2Price" },
+              { size: "1.20", norm: "pipe120NoTISPrice", t3: "pipe120T3Price", t2: "pipe120T2Price" },
+              { size: "1.50", norm: "pipe150NoTISPrice", t3: "pipe150T3Price", t2: "pipe150T2Price" }
+            ].map((p) => (
+              <div key={p.size} className="sm:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 bg-neutral-50/60 p-3 rounded-xl border border-neutral-100">
+                <div className="flex flex-col justify-center">
+                  <span className="text-xs font-bold text-neutral-800">ท่อระบายน้ำ ขนาด Ø {p.size} ม.</span>
+                  <span className="text-[10px] text-neutral-400">ระบายน้ำ คสล.</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-neutral-500">ราคา ธรรมดา (คสล)</label>
+                  <input
+                    type="number"
+                    value={pricesInput[p.norm as keyof Prices]}
+                    onChange={(e) => handlePriceChange(p.norm as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-neutral-500">มอก.3</label>
+                    <input
+                      type="number"
+                      value={pricesInput[p.t3 as keyof Prices]}
+                      onChange={(e) => handlePriceChange(p.t3 as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-neutral-500">มอก.2</label>
+                    <input
+                      type="number"
+                      value={pricesInput[p.t2 as keyof Prices]}
+                      onChange={(e) => handlePriceChange(p.t2 as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Catch Basins Prices Group */}
+            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
+              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">กลุ่มบ่อพัก คสล.อัดแรง (บาท / บ่อพัก) 🕳️</span>
+            </div>
+
+            {[
+              { size: "0.30", field: "basin030Price" },
+              { size: "0.40", field: "basin040Price" },
+              { size: "0.50", field: "basin050Price" },
+              { size: "0.60", field: "basin060Price" },
+              { size: "0.80", field: "basin080Price" },
+              { size: "1.00", field: "basin100Price" },
+              { size: "1.20", field: "basin120Price" }
+            ].map((b) => (
+              <div key={b.size} className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-neutral-600">บ่อพัก คสล. ขนาด {b.size} ม.</label>
+                <input
+                  type="number"
+                  value={pricesInput[b.field as keyof Prices]}
+                  onChange={(e) => handlePriceChange(b.field as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -839,6 +916,83 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+
+            {/* Drainage Pipe Weights Group */}
+            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
+              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">ค่าน้ำหนักท่อระบายน้ำ คสล. (กก. / ท่อน) 🌊</span>
+            </div>
+
+            {[
+              { size: "0.30", norm: "pipe030Weight", t3: "pipe030T3Weight", t2: "pipe030T2Weight" },
+              { size: "0.40", norm: "pipe040Weight", t3: "pipe040T3Weight", t2: "pipe040T2Weight" },
+              { size: "0.50", norm: "pipe050Weight", t3: "pipe050T3Weight", t2: "pipe050T2Weight" },
+              { size: "0.60", norm: "pipe060Weight", t3: "pipe060T3Weight", t2: "pipe060T2Weight" },
+              { size: "0.80", norm: "pipe080Weight", t3: "pipe080T3Weight", t2: "pipe080T2Weight" },
+              { size: "1.00", norm: "pipe100Weight", t3: "pipe100T3Weight", t2: "pipe100T2Weight" },
+              { size: "1.20", norm: "pipe120Weight", t3: "pipe120T3Weight", t2: "pipe120T2Weight" },
+              { size: "1.50", norm: "pipe150Weight", t3: "pipe150T3Weight", t2: "pipe150T2Weight" }
+            ].map((w) => (
+              <div key={w.size} className="sm:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 bg-neutral-50/60 p-3 rounded-xl border border-neutral-100">
+                <div className="flex flex-col justify-center">
+                  <span className="text-xs font-bold text-neutral-800">น้ำหนักท่อขนาด Ø {w.size} ม.</span>
+                  <span className="text-[10px] text-neutral-400">น้ำหนัก คสล. (ก.ก.)</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-neutral-500">น้ำหนัก คสล. ปกติ</label>
+                  <input
+                    type="number"
+                    value={weightsInput[w.norm as keyof Weights]}
+                    onChange={(e) => handleWeightChange(w.norm as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-neutral-500">มอก.3</label>
+                    <input
+                      type="number"
+                      value={weightsInput[w.t3 as keyof Weights]}
+                      onChange={(e) => handleWeightChange(w.t3 as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-neutral-500">มอก.2</label>
+                    <input
+                      type="number"
+                      value={weightsInput[w.t2 as keyof Weights]}
+                      onChange={(e) => handleWeightChange(w.t2 as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Catch Basins Weights Group */}
+            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
+              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">ค่าน้ำหนักบ่อพัก คสล.อัดแรง (กก. / บ่อพัก) 🕳️</span>
+            </div>
+
+            {[
+              { size: "0.30", field: "basin030Weight" },
+              { size: "0.40", field: "basin040Weight" },
+              { size: "0.50", field: "basin050Weight" },
+              { size: "0.60", field: "basin060Weight" },
+              { size: "0.80", field: "basin080Weight" },
+              { size: "1.00", field: "basin100Weight" },
+              { size: "1.20", field: "basin120Weight" }
+            ].map((wb) => (
+              <div key={wb.size} className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-neutral-600">บ่อพัก คสล. ขนาด {wb.size} ม.</label>
+                <input
+                  type="number"
+                  value={weightsInput[wb.field as keyof Weights]}
+                  onChange={(e) => handleWeightChange(wb.field as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+                />
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { defaultSettings, APP_VERSION } from "./data";
 import SlabCalculator from "./components/SlabCalculator";
 import PileCalculator from "./components/PileCalculator";
 import HollowCoreCalculator from "./components/HollowCoreCalculator";
+import DrainageCalculator from "./components/DrainageCalculator";
 import WeightCalculator from "./components/WeightCalculator";
 import SettingsPanel from "./components/SettingsPanel";
 import UniversalBatchCalculator from "./components/UniversalBatchCalculator";
@@ -23,6 +24,7 @@ import {
   Layers,
   Home,
   Sparkles,
+  Droplets,
 } from "lucide-react";
 
 const MenuCard = ({
@@ -301,6 +303,17 @@ export default function App() {
                   <Layers size={16} />
                   แผ่นพื้นกลวง (Hollow Core)
                 </button>
+                <button
+                  onClick={() => setPriceSubTab("drainage")}
+                  className={`py-3 px-5 rounded-xl font-bold text-sm text-center transition flex items-center justify-center gap-2 ${
+                    priceSubTab === "drainage"
+                      ? "bg-[#C62828] text-white shadow-sm"
+                      : "text-neutral-500 hover:text-[#C62828] hover:bg-neutral-50"
+                  }`}
+                >
+                  <Droplets size={16} />
+                  ท่อระบายน้ำ / บ่อพัก
+                </button>
               </div>
 
               {/* Display correct price subtab */}
@@ -314,6 +327,14 @@ export default function App() {
               )}
               {priceSubTab === "pile" && <PileCalculator settings={settings} />}
               {priceSubTab === "hollowCore" && <HollowCoreCalculator settings={settings} />}
+              {priceSubTab === "drainage" && (
+                <DrainageCalculator 
+                  settings={settings} 
+                  weightItems={weightItems}
+                  setWeightItems={setWeightItems}
+                  onNavigateToWeight={() => setCurrentScreen("weight")}
+                />
+              )}
             </motion.div>
           ) : currentScreen === "scan" ? (
             /* ========================================================= */
