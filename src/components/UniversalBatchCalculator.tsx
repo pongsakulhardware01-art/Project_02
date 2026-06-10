@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
 import { AppSettings, WeightItem } from "../types";
-import { fmt, roundToBeautifulPrice } from "../utils";
+import { fmt, roundToBeautifulPrice, compressImage } from "../utils";
 import {
   Camera,
   Upload,
@@ -44,7 +44,7 @@ export interface UniversalBatchItem {
   hcWidth?: 0.35 | 0.60 | 1.20; // hollow core width in meters
   customPrice?: number | ""; // user pricing override
   customStandardRate?: number | ""; // user standard rate override
-  customUnitWeight?: number | ""; // user weight per piece override
+  customWeightPerMeter?: number | ""; // user weight per meter override
   label?: string; // OCR text label or notes
 }
 
@@ -155,7 +155,7 @@ export default function UniversalBatchCalculator({
             updated.count = 10;
             updated.customPrice = "";
             updated.customStandardRate = "";
-            updated.customUnitWeight = "";
+            updated.customWeightPerMeter = "";
             
             if (cat === "slab") {
               updated.wireCount = "auto";
@@ -222,16 +222,23 @@ export default function UniversalBatchCalculator({
           const file = clipboardItems[i].getAsFile();
           if (file) {
             e.preventDefault();
-            setImageMimeType(file.type);
+            setImageMimeType("image/jpeg");
             setScanError(null);
             setSuccessMessage(null);
 
-            const reader = new FileReader();
-            reader.onload = () => {
-              setSelectedImage(reader.result as string);
-              setSuccessMessage("วางภาพใบสั่งงานสเปกเรียบร้อยจากคลิปบอร์ดคลิกบอร์ดสำเร็จ! 📋✨ ท่านสามารถกดเริ่มสแกนรูปภาพได้ทันที");
-            };
-            reader.readAsDataURL(file);
+            compressImage(file)
+              .then((compressedBase64) => {
+                setSelectedImage(compressedBase64);
+                setSuccessMessage("วางภาพใบสั่งงานสเปกเรียบร้อยจากคลิปบอร์ดสำเร็จ! 📋✨ ท่านสามารถกดเริ่มสแกนรูปภาพได้ทันที");
+              })
+              .catch((err) => {
+                console.error("Image compression failed, using fallback:", err);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  setSelectedImage(reader.result as string);
+                };
+                reader.readAsDataURL(file);
+              });
             break;
           }
         }
@@ -253,15 +260,22 @@ export default function UniversalBatchCalculator({
       return;
     }
 
-    setImageMimeType(file.type);
+    setImageMimeType("image/jpeg");
     setScanError(null);
     setSuccessMessage(null);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelectedImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    compressImage(file)
+      .then((compressedBase64) => {
+        setSelectedImage(compressedBase64);
+      })
+      .catch((err) => {
+        console.error("Image compression failed, using fallback:", err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          setSelectedImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
   };
 
   // Drag and Drop
@@ -286,15 +300,22 @@ export default function UniversalBatchCalculator({
       return;
     }
 
-    setImageMimeType(file.type);
+    setImageMimeType("image/jpeg");
     setScanError(null);
     setSuccessMessage(null);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelectedImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    compressImage(file)
+      .then((compressedBase64) => {
+        setSelectedImage(compressedBase64);
+      })
+      .catch((err) => {
+        console.error("Image compression failed, using fallback:", err);
+        const reader = new FileReader();
+        reader.onload = () => {
+          setSelectedImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
   };
 
   // Client-Side parsing fallback for Robust Offline usage
@@ -676,13 +697,12 @@ export default function UniversalBatchCalculator({
 
     const rowPriceTotal = computedUnitPrice * qty;
     
-    // Support custom weight per piece override
-    const calculatedPieceWeight = baseWeightPerMeter * len;
-    const singlePieceWeight = item.customUnitWeight !== "" && item.customUnitWeight !== undefined && Number(item.customUnitWeight) >= 0
-      ? Number(item.customUnitWeight)
-      : calculatedPieceWeight;
+    // Support custom weight per meter override
+    const finalWeightPerMeter = item.customWeightPerMeter !== "" && item.customWeightPerMeter !== undefined && Number(item.customWeightPerMeter) >= 0
+      ? Number(item.customWeightPerMeter)
+      : baseWeightPerMeter;
       
-    const rowWeightTotal = singlePieceWeight * qty;
+    const rowWeightTotal = finalWeightPerMeter * len * qty;
 
     // Calc areas
     let areaMultiplier = 0;
@@ -738,8 +758,8 @@ export default function UniversalBatchCalculator({
         type: typeSlug,
         count: row.count === "" ? 1 : row.count,
         length: row.length === "" ? 2.0 : row.length,
-        unitWeight: row.customUnitWeight !== "" && row.customUnitWeight !== undefined && Number(row.customUnitWeight) >= 0
-          ? Number(row.customUnitWeight) / (row.length === "" || row.length === 0 ? 1 : row.length)
+        unitWeight: row.customWeightPerMeter !== "" && row.customWeightPerMeter !== undefined && Number(row.customWeightPerMeter) >= 0
+          ? Number(row.customWeightPerMeter)
           : row.unitWeight
       };
     });
@@ -1048,7 +1068,7 @@ export default function UniversalBatchCalculator({
                     <th className="py-3.5 px-3 w-[75px] text-center font-semibold">ยาว (ม.)</th>
                     <th className="py-3.5 px-3 w-[70px] text-center font-semibold">จำนวน</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
-                    <th className="py-3.5 px-4 w-[120px] text-center font-semibold">นน./ชิ้น (กก.)</th>
+                    <th className="py-3.5 px-4 w-[120px] text-center font-semibold">นน./เมตร (กก.)</th>
                     <th className="py-3.5 px-4 w-[130px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
                     <th className="py-3.5 px-3 w-[50px] text-center"></th>
@@ -1213,18 +1233,18 @@ export default function UniversalBatchCalculator({
                           )}
                         </td>
 
-                        {/* นน.ต่อชิ้น (กก.) */}
+                        {/* นน.ต่อเมตร (กก./ม.) */}
                         <td className="py-3 px-3 text-center">
                           <div className="flex items-center gap-1 justify-center w-full min-w-[120px]">
                             <input
                               type="number"
-                              value={row.customUnitWeight ?? ""}
-                              onChange={(e) => editLineItem(row.id, "customUnitWeight", e.target.value === "" ? "" : parseFloat(e.target.value))}
-                              placeholder={fmt(row.unitWeight * (row.length === "" ? 0 : row.length))}
+                              value={row.customWeightPerMeter ?? ""}
+                              onChange={(e) => editLineItem(row.id, "customWeightPerMeter", e.target.value === "" ? "" : parseFloat(e.target.value))}
+                              placeholder={fmt(row.unitWeight)}
                               className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none text-neutral-850"
-                              title="กำหนดน้ำหนักต่อชิ้นเอง (กิโลกรัม) หรือปล่อยว่างเพื่อใช้ตามสูตรทั่วไป"
+                              title="กำหนดน้ำหนักต่อเมตรเอง (กิโลกรัม/เมตร) หรือปล่อยว่างเพื่อใช้ตามสูตรทั่วไป"
                             />
-                            <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">กก.</span>
+                            <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">กก./ม.</span>
                           </div>
                         </td>
 

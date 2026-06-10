@@ -40,3 +40,66 @@ export function getLoadCapacity(length: number, wireCount: string): number {
 
   return 0;
 }
+
+export function compressImage(
+  fileOrBase64: File | string,
+  maxWidth = 1400,
+  maxHeight = 1400,
+  quality = 0.85
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const processSrc = (src: string) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions while keeping aspect ratio
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(src); // Fallback to original if context not available
+          return;
+        }
+
+        // Fill background with white to handle transparent PNGs nicely when saving as JPEG
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => {
+        reject(err);
+      };
+      img.src = src;
+    };
+
+    if (fileOrBase64 instanceof File) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          processSrc(e.target.result as string);
+        } else {
+          reject(new Error("Cannot read file"));
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(fileOrBase64);
+    } else {
+      processSrc(fileOrBase64);
+    }
+  });
+}
