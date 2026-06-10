@@ -14,17 +14,31 @@ export interface Prices {
   i22TISJointPrice: number;
   // Others
   i26NoTISPrice: number;
+  i26NoTISJointPrice: number;
   i26TISPrice: number;
+  i26TISJointPrice: number;
   i30NoTISPrice: number;
+  i30NoTISJointPrice: number;
   i30TISPrice: number;
+  i30TISJointPrice: number;
+  i35TISPrice: number;
+  i35TISJointPrice: number;
+  i40TISPrice: number;
+  i40TISJointPrice: number;
   hexPilePrice: number;
   // S-Piles (Solid Square Piles)
   s18Price: number;
+  s18JointPrice: number;
   s22Price: number;
+  s22JointPrice: number;
   s26Price: number;
+  s26JointPrice: number;
   s30Price: number;
+  s30JointPrice: number;
   s35Price: number;
+  s35JointPrice: number;
   s40Price: number;
+  s40JointPrice: number;
   fence3Price: number;
   fence4Price: number;
   hcPriceSqm: number;

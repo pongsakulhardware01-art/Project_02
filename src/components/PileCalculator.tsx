@@ -15,11 +15,13 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
   const [pileLength, setPileLength] = useState<number | "">(2.0);
   const [pileCount, setPileCount] = useState<number | "">(10);
 
-  const isI18OrI22 = pileType === "i18" || pileType === "i22";
-  const hasStandardOption = pileType === "i18" || pileType === "i22" || pileType === "i26" || pileType === "i30";
+  const isI_Shape = pileType === "i18" || pileType === "i22" || pileType === "i26" || pileType === "i30" || pileType === "i35" || pileType === "i40";
+  const isS_Shape = pileType === "s18" || pileType === "s22" || pileType === "s26" || pileType === "s30" || pileType === "s35" || pileType === "s40";
+  const hasConnectionOption = isI_Shape || isS_Shape;
+  const hasStandardOption = pileType === "i18" || pileType === "i22" || pileType === "i26" || pileType === "i30" || pileType === "i35" || pileType === "i40";
   
   const isTis = hasStandardOption && pileStandard === "tis";
-  const isJoint = isI18OrI22 && pileConnection === "joint";
+  const isJoint = hasConnectionOption && pileConnection === "joint";
 
   const calcPileLength = pileLength === "" ? 0 : pileLength;
   const calcPileCount = pileCount === "" ? 0 : pileCount;
@@ -55,29 +57,43 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
       pricePerMeter = isTis ? settings.prices.i22TISPrice : settings.prices.i22NoTISPrice;
     }
   } else if (pileType === "i26") {
-    pricePerMeter = isTis ? settings.prices.i26TISPrice : settings.prices.i26NoTISPrice;
     weightPerMeter = isTis ? settings.weights.i26_tis : settings.weights.i26_no_tis;
+    if (isJoint) {
+      pricePerMeter = isTis ? settings.prices.i26TISJointPrice : settings.prices.i26NoTISJointPrice;
+    } else {
+      pricePerMeter = isTis ? settings.prices.i26TISPrice : settings.prices.i26NoTISPrice;
+    }
   } else if (pileType === "i30") {
-    pricePerMeter = isTis ? settings.prices.i30TISPrice : settings.prices.i30NoTISPrice;
     weightPerMeter = isTis ? settings.weights.i30_tis : settings.weights.i30_no_tis;
+    if (isJoint) {
+      pricePerMeter = isTis ? settings.prices.i30TISJointPrice : settings.prices.i30NoTISJointPrice;
+    } else {
+      pricePerMeter = isTis ? settings.prices.i30TISPrice : settings.prices.i30NoTISPrice;
+    }
+  } else if (pileType === "i35") {
+    weightPerMeter = settings.weights.i35;
+    pricePerMeter = isJoint ? settings.prices.i35TISJointPrice : settings.prices.i35TISPrice;
+  } else if (pileType === "i40") {
+    weightPerMeter = settings.weights.i40;
+    pricePerMeter = isJoint ? settings.prices.i40TISJointPrice : settings.prices.i40TISPrice;
   } else if (pileType === "s18") {
-    pricePerMeter = settings.prices.s18Price;
     weightPerMeter = settings.weights.s18;
+    pricePerMeter = isJoint ? settings.prices.s18JointPrice : settings.prices.s18Price;
   } else if (pileType === "s22") {
-    pricePerMeter = settings.prices.s22Price;
     weightPerMeter = settings.weights.s22;
+    pricePerMeter = isJoint ? settings.prices.s22JointPrice : settings.prices.s22Price;
   } else if (pileType === "s26") {
-    pricePerMeter = settings.prices.s26Price;
     weightPerMeter = settings.weights.s26;
+    pricePerMeter = isJoint ? settings.prices.s26JointPrice : settings.prices.s26Price;
   } else if (pileType === "s30") {
-    pricePerMeter = settings.prices.s30Price;
     weightPerMeter = settings.weights.s30;
+    pricePerMeter = isJoint ? settings.prices.s30JointPrice : settings.prices.s30Price;
   } else if (pileType === "s35") {
-    pricePerMeter = settings.prices.s35Price;
     weightPerMeter = settings.weights.s35;
+    pricePerMeter = isJoint ? settings.prices.s35JointPrice : settings.prices.s35Price;
   } else if (pileType === "s40") {
-    pricePerMeter = settings.prices.s40Price;
     weightPerMeter = settings.weights.s40;
+    pricePerMeter = isJoint ? settings.prices.s40JointPrice : settings.prices.s40Price;
   }
 
   const pricePerPile = pricePerMeter * calcPileLength;
@@ -111,6 +127,8 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
                   <option value="i22">เสาเข็มไอ I-22</option>
                   <option value="i26">เสาเข็มไอ I-26</option>
                   <option value="i30">เสาเข็มไอ I-30</option>
+                  <option value="i35">เสาเข็มไอ I-35</option>
+                  <option value="i40">เสาเข็มไอ I-40</option>
                 </optgroup>
                 <optgroup label="เสาสี่เหลี่ยมตัน (Solid Square Pile) - ใหม่ ✨">
                   <option value="s18">เสาสี่เหลี่ยมตัน S-18</option>
@@ -128,8 +146,8 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
               </select>
             </div>
 
-            {/* Connection option for I18 / I22 */}
-            {isI18OrI22 && (
+            {/* Connection option for I-shapes & S-piles */}
+            {hasConnectionOption && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-semibold text-neutral-700">ลักษณะท่อนเสาเข็ม</label>
                 <select
@@ -228,7 +246,7 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
                 {isTis ? "มอก. (TIS Approved)" : "ธรรมดาทั่วไป"}
               </span>
             </div>
-            {isI18OrI22 && (
+            {hasConnectionOption && (
               <div className="flex justify-between items-center text-sm">
                 <span>รูปแบบโครงสร้างการเชื่อม:</span>
                 <strong className="text-white font-medium">{isJoint ? "ใช้แผ่นเหล็กเชื่อมต่อหัว" : "ท่อนชิ้นเดียวยาวตลอด"}</strong>

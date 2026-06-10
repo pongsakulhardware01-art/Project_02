@@ -16,25 +16,23 @@ export function PileVisualizer({ pileType, isJoint, isTis, length }: PileVisuali
       case "i15":
         return "เสาเข็มไอ I-15";
       case "i18":
-        return `เสาเข็มไอ I-18 ${isJoint ? "(ท่อนต่อ Joint)" : "(ท่อนเดียว)"}`;
       case "i22":
-        return `เสาเข็มไอ I-22 ${isJoint ? "(ท่อนต่อ Joint)" : "(ท่อนเดียว)"}`;
       case "i26":
-        return "เสาเข็มไอ I-26";
       case "i30":
-        return "เสาเข็มไอ I-30";
+      case "i35":
+      case "i40": {
+        const num = pileType.replace("i", "");
+        return `เสาเข็มไอ I-${num} ${isJoint ? "(ท่อนต่อ Joint)" : "(ท่อนเดียว)"}`;
+      }
       case "s18":
-        return "เสาสี่เหลี่ยมตัน S-18";
       case "s22":
-        return "เสาสี่เหลี่ยมตัน S-22";
       case "s26":
-        return "เสาสี่เหลี่ยมตัน S-26";
       case "s30":
-        return "เสาสี่เหลี่ยมตัน S-30";
       case "s35":
-        return "เสาสี่เหลี่ยมตัน S-35";
-      case "s40":
-        return "เสาสี่เหลี่ยมตัน S-40";
+      case "s40": {
+        const num = pileType.replace("s", "");
+        return `เสาสี่เหลี่ยมตัน S-${num} ${isJoint ? "(ท่อนต่อ Joint)" : "(ท่อนเดียว)"}`;
+      }
       case "fence3":
         return "เสารั้วหน้า 3 นิ้ว";
       case "fence4":

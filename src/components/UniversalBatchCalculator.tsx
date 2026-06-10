@@ -624,41 +624,55 @@ export default function UniversalBatchCalculator({
       } else if (pType === "i18") {
         baseWeightPerMeter = isTis ? settings.weights.i18_tis : settings.weights.i18_no_tis;
         if (isJoint) {
-          defaultStandardRate = isTis ? settings.prices.i18TISJointPrice || settings.prices.i18JointPrice : settings.prices.i18JointPrice;
+          defaultStandardRate = isTis ? settings.prices.i18TISJointPrice : settings.prices.i18JointPrice;
         } else {
           defaultStandardRate = isTis ? settings.prices.i18TISPrice : settings.prices.i18NoTISPrice;
         }
       } else if (pType === "i22") {
         baseWeightPerMeter = isTis ? settings.weights.i22_tis : settings.weights.i22_no_tis;
         if (isJoint) {
-          defaultStandardRate = isTis ? settings.prices.i22TISJointPrice || settings.prices.i22JointPrice : settings.prices.i22JointPrice;
+          defaultStandardRate = isTis ? settings.prices.i22TISJointPrice : settings.prices.i22JointPrice;
         } else {
           defaultStandardRate = isTis ? settings.prices.i22TISPrice : settings.prices.i22NoTISPrice;
         }
       } else if (pType === "i26") {
         baseWeightPerMeter = isTis ? settings.weights.i26_tis : settings.weights.i26_no_tis;
-        defaultStandardRate = isTis ? settings.prices.i26TISPrice : settings.prices.i26NoTISPrice;
+        if (isJoint) {
+          defaultStandardRate = isTis ? settings.prices.i26TISJointPrice : settings.prices.i26NoTISJointPrice;
+        } else {
+          defaultStandardRate = isTis ? settings.prices.i26TISPrice : settings.prices.i26NoTISPrice;
+        }
       } else if (pType === "i30") {
         baseWeightPerMeter = isTis ? settings.weights.i30_tis : settings.weights.i30_no_tis;
-        defaultStandardRate = isTis ? settings.prices.i30TISPrice : settings.prices.i30NoTISPrice;
+        if (isJoint) {
+          defaultStandardRate = isTis ? settings.prices.i30TISJointPrice : settings.prices.i30NoTISJointPrice;
+        } else {
+          defaultStandardRate = isTis ? settings.prices.i30TISPrice : settings.prices.i30NoTISPrice;
+        }
+      } else if (pType === "i35") {
+        baseWeightPerMeter = settings.weights.i35;
+        defaultStandardRate = isJoint ? settings.prices.i35TISJointPrice : settings.prices.i35TISPrice;
+      } else if (pType === "i40") {
+        baseWeightPerMeter = settings.weights.i40;
+        defaultStandardRate = isJoint ? settings.prices.i40TISJointPrice : settings.prices.i40TISPrice;
       } else if (pType === "s18") {
-        defaultStandardRate = settings.prices.s18Price;
         baseWeightPerMeter = settings.weights.s18;
+        defaultStandardRate = isJoint ? settings.prices.s18JointPrice : settings.prices.s18Price;
       } else if (pType === "s22") {
-        defaultStandardRate = settings.prices.s22Price;
         baseWeightPerMeter = settings.weights.s22;
+        defaultStandardRate = isJoint ? settings.prices.s22JointPrice : settings.prices.s22Price;
       } else if (pType === "s26") {
-        defaultStandardRate = settings.prices.s26Price;
         baseWeightPerMeter = settings.weights.s26;
+        defaultStandardRate = isJoint ? settings.prices.s26JointPrice : settings.prices.s26Price;
       } else if (pType === "s30") {
-        defaultStandardRate = settings.prices.s30Price;
         baseWeightPerMeter = settings.weights.s30;
+        defaultStandardRate = isJoint ? settings.prices.s30JointPrice : settings.prices.s30Price;
       } else if (pType === "s35") {
-        defaultStandardRate = settings.prices.s35Price;
         baseWeightPerMeter = settings.weights.s35;
+        defaultStandardRate = isJoint ? settings.prices.s35JointPrice : settings.prices.s35Price;
       } else if (pType === "s40") {
-        defaultStandardRate = settings.prices.s40Price;
         baseWeightPerMeter = settings.weights.s40;
+        defaultStandardRate = isJoint ? settings.prices.s40JointPrice : settings.prices.s40Price;
       }
 
     // HOLLOW CORE CATEGORY
@@ -1068,7 +1082,7 @@ export default function UniversalBatchCalculator({
                     <th className="py-3.5 px-3 w-[75px] text-center font-semibold">ยาว (ม.)</th>
                     <th className="py-3.5 px-3 w-[70px] text-center font-semibold">จำนวน</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
-                    <th className="py-3.5 px-4 w-[120px] text-center font-semibold">นน./เมตร (กก.)</th>
+                    <th className="py-3.5 px-4 w-[120px] text-center font-semibold">น้ำหนัก/ม. (กก.)</th>
                     <th className="py-3.5 px-4 w-[130px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
                     <th className="py-3.5 px-4 w-[140px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
                     <th className="py-3.5 px-3 w-[50px] text-center"></th>
@@ -1190,26 +1204,26 @@ export default function UniversalBatchCalculator({
                             </select>
                           )}
 
-                          {row.category === "pile" && (row.model === "i18" || row.model === "i22" || row.model === "i26" || row.model === "i30") && (
+                          {row.category === "pile" && (["i18", "i22", "i26", "i30", "i35", "i40", "s18", "s22", "s26", "s30", "s35", "s40"].includes(row.model)) && (
                             <div className="flex gap-1 min-w-[124px]">
-                              <select
-                                value={row.tisStandard}
-                                onChange={(e) => editLineItem(row.id, "tisStandard", e.target.value)}
-                                className="p-1 px-1.5 bg-neutral-50 hover:bg-white border border-neutral-200 rounded-xl text-[10px] font-semibold flex-1 transition focus:ring-1 focus:ring-red-400 focus:outline-none"
-                              >
-                                <option value="no_tis">ปกติ</option>
-                                <option value="tis">มอก.</option>
-                              </select>
-                              {(row.model === "i18" || row.model === "i22") && (
+                              {row.model.startsWith("i") && (
                                 <select
-                                  value={row.connectionType}
-                                  onChange={(e) => editLineItem(row.id, "connectionType", e.target.value)}
+                                  value={row.tisStandard}
+                                  onChange={(e) => editLineItem(row.id, "tisStandard", e.target.value)}
                                   className="p-1 px-1.5 bg-neutral-50 hover:bg-white border border-neutral-200 rounded-xl text-[10px] font-semibold flex-1 transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                                 >
-                                  <option value="single">ท่อนเดียว</option>
-                                  <option value="joint">มีท่อนต่อ</option>
+                                  <option value="no_tis">ปกติ</option>
+                                  <option value="tis">มอก.</option>
                                 </select>
                               )}
+                              <select
+                                value={row.connectionType}
+                                onChange={(e) => editLineItem(row.id, "connectionType", e.target.value)}
+                                className="p-1 px-1.5 bg-neutral-50 hover:bg-white border border-neutral-200 rounded-xl text-[10px] font-semibold flex-1 transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              >
+                                <option value="single">ท่อนเดียว</option>
+                                <option value="joint">มีท่อนต่อ</option>
+                              </select>
                             </div>
                           )}
 
@@ -1226,7 +1240,7 @@ export default function UniversalBatchCalculator({
                           )}
 
                           {/* Fallback space for others */}
-                          {row.category === "pile" && !["i18", "i22", "i26", "i30"].includes(row.model) && (
+                          {row.category === "pile" && !["i18", "i22", "i26", "i30", "i35", "i40", "s18", "s22", "s26", "s30", "s35", "s40"].includes(row.model) && (
                             <span className="text-xs text-neutral-400 font-mono text-center block min-w-[124px]">
                               ริ้วปกติ
                             </span>

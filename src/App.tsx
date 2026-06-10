@@ -64,6 +64,13 @@ export default function App() {
 
   // Load configuration from local storage, baked in state, or fallback to defaults
   const [settings, setSettings] = useState<AppSettings>(() => {
+    // Clear old localStorage if version changed (e.g. from V.33 to V.34)
+    const storedVer = localStorage.getItem("pongsakulVersion");
+    if (storedVer !== APP_VERSION) {
+      localStorage.removeItem("pongsakulSettings");
+      localStorage.setItem("pongsakulVersion", APP_VERSION);
+    }
+
     const baked = (window as any).BAKED_SETTINGS;
     if (baked && typeof baked === "object") {
       return {

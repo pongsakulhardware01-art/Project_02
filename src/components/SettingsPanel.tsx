@@ -334,7 +334,7 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
             <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-26 ธรรมดา</label>
+              <label className="text-xs font-semibold text-neutral-600">I-26 ธรรมดา (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.i26NoTISPrice}
@@ -343,7 +343,7 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-26 มอก.</label>
+              <label className="text-xs font-semibold text-[#8B0000]">I-26 มอก. (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.i26TISPrice}
@@ -353,7 +353,28 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-30 ธรรมดา</label>
+              <label className="text-xs font-semibold text-neutral-600">I-26 ธรรมดา (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i26NoTISJointPrice}
+                onChange={(e) => handlePriceChange("i26NoTISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-26 มอก. (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i26TISJointPrice}
+                onChange={(e) => handlePriceChange("i26TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+
+            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">I-30 ธรรมดา (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.i30NoTISPrice}
@@ -362,11 +383,70 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-30 มอก.</label>
+              <label className="text-xs font-semibold text-[#8B0000]">I-30 มอก. (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.i30TISPrice}
                 onChange={(e) => handlePriceChange("i30TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">I-30 ธรรมดา (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i30NoTISJointPrice}
+                onChange={(e) => handlePriceChange("i30NoTISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-30 มอก. (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i30TISJointPrice}
+                onChange={(e) => handlePriceChange("i30TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+
+            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-35 มอก. (ท่อนเดียว)</label>
+              <input
+                type="number"
+                value={pricesInput.i35TISPrice}
+                onChange={(e) => handlePriceChange("i35TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-35 มอก. (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i35TISJointPrice}
+                onChange={(e) => handlePriceChange("i35TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-40 มอก. (ท่อนเดียว)</label>
+              <input
+                type="number"
+                value={pricesInput.i40TISPrice}
+                onChange={(e) => handlePriceChange("i40TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#8B0000]">I-40 มอก. (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.i40TISJointPrice}
+                onChange={(e) => handlePriceChange("i40TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
               />
             </div>
@@ -412,7 +492,7 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-18</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-18 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s18Price}
@@ -420,9 +500,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-18 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s18JointPrice}
+                onChange={(e) => handlePriceChange("s18JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-22</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-22 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s22Price}
@@ -430,9 +519,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-22 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s22JointPrice}
+                onChange={(e) => handlePriceChange("s22JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-26</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-26 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s26Price}
@@ -440,9 +538,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-26 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s26JointPrice}
+                onChange={(e) => handlePriceChange("s26JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-30</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-30 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s30Price}
@@ -450,9 +557,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-30 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s30JointPrice}
+                onChange={(e) => handlePriceChange("s30JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-35</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-35 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s35Price}
@@ -460,13 +576,31 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-35 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s35JointPrice}
+                onChange={(e) => handlePriceChange("s35JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-40</label>
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-40 (ท่อนเดียว)</label>
               <input
                 type="number"
                 value={pricesInput.s40Price}
                 onChange={(e) => handlePriceChange("s40Price", Math.max(0, parseFloat(e.target.value) || 0))}
+                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-40 (ท่อนต่อ Joint)</label>
+              <input
+                type="number"
+                value={pricesInput.s40JointPrice}
+                onChange={(e) => handlePriceChange("s40JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
                 className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
               />
             </div>

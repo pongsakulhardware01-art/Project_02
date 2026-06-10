@@ -18,17 +18,90 @@ async function startServer() {
   // In-memory cache for fast retrieves and temporary persistence fallback
   let cachedSettings: any = null;
 
+  // Force migration / update of settings-db.json with new prices and weights
+  const defaultUpdatedSettings = {
+    prices: {
+      normalBoardPrice: 210,
+      mocBoardPrice: 230,
+      i15Price: 90,
+      // I-18
+      i18NoTISPrice: 120,
+      i18TISPrice: 140,
+      i18JointPrice: 140,
+      i18TISJointPrice: 160,
+      // I-22
+      i22NoTISPrice: 170,
+      i22TISPrice: 190,
+      i22JointPrice: 180,
+      i22TISJointPrice: 200,
+      // Others
+      i26NoTISPrice: 210,
+      i26NoTISJointPrice: 220,
+      i26TISPrice: 235,
+      i26TISJointPrice: 250,
+      i30NoTISPrice: 240,
+      i30NoTISJointPrice: 255,
+      i30TISPrice: 290,
+      i30TISJointPrice: 310,
+      i35TISPrice: 370,
+      i35TISJointPrice: 395,
+      i40TISPrice: 500,
+      i40TISJointPrice: 530,
+      hexPilePrice: 70,
+      // S-Piles default prices
+      s18Price: 170,
+      s18JointPrice: 180,
+      s22Price: 230,
+      s22JointPrice: 240,
+      s26Price: 280,
+      s26JointPrice: 300,
+      s30Price: 370,
+      s30JointPrice: 400,
+      s35Price: 490,
+      s35JointPrice: 520,
+      s40Price: 590,
+      s40JointPrice: 645,
+      fence3Price: 60,
+      fence4Price: 75,
+      hcPriceSqm: 655,
+      vatPercent: 7,
+    },
+    weights: {
+      slab: 42.0,
+      fence3: 14.0,
+      fence4: 24.0,
+      hex: 30.0,
+      // I-Piles
+      i15: 43.0,
+      i18_no_tis: 50.0,
+      i18_tis: 66.0,
+      i22_no_tis: 80.0,
+      i22_tis: 93.0,
+      i26_no_tis: 105.0,
+      i26_tis: 117.0,
+      i30_no_tis: 137.0,
+      i30_tis: 160.0,
+      i35: 212.0,
+      i40: 298.0,
+      // S-Piles
+      s18: 78.0,
+      s22: 117.0,
+      s26: 163.0,
+      s30: 216.0,
+      s35: 294.0,
+      s40: 384.0,
+    }
+  };
+
   const dbPath = path.join(process.cwd(), "settings-db.json");
 
-  // Pre-load from disk if exists
-  if (fs.existsSync(dbPath)) {
-    try {
-      const data = fs.readFileSync(dbPath, "utf-8");
-      cachedSettings = JSON.parse(data);
-      console.log("Loaded existing settings from settings-db.json");
-    } catch (e) {
-      console.error("Failed to parse settings-db.json, starting fresh", e);
-    }
+  // Write new database settings to ensure they are up-to-date
+  try {
+    fs.writeFileSync(dbPath, JSON.stringify(defaultUpdatedSettings, null, 2), "utf-8");
+    cachedSettings = defaultUpdatedSettings;
+    console.log("Successfully force-updated settings-db.json to new default prices & weights");
+  } catch (e) {
+    console.error("Failed to write updated settings-db.json", e);
   }
 
   // API 1: Health check
