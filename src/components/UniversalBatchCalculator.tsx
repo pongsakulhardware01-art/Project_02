@@ -391,6 +391,8 @@ export default function UniversalBatchCalculator({
         else if (/i-?22/i.test(trimmed)) model = "i22";
         else if (/i-?26/i.test(trimmed)) model = "i26";
         else if (/i-?30/i.test(trimmed)) model = "i30";
+        else if (/i-?35/i.test(trimmed)) model = "i35";
+        else if (/i-?40/i.test(trimmed)) model = "i40";
         else if (/s-?18/i.test(trimmed)) model = "s18";
         else if (/s-?22/i.test(trimmed)) model = "s22";
         else if (/s-?26/i.test(trimmed)) model = "s26";
@@ -875,6 +877,8 @@ export default function UniversalBatchCalculator({
       case "i22": return "เสาเข็มไอ I-22";
       case "i26": return "เสาเข็มไอ I-26";
       case "i30": return "เสาเข็มไอ I-30";
+      case "i35": return "เสาเข็มไอ I-35";
+      case "i40": return "เสาเข็มไอ I-40";
       case "s18": return "สี่เหลี่ยมตัน S-18";
       case "s22": return "สี่เหลี่ยมตัน S-22";
       case "s26": return "สี่เหลี่ยมตัน S-26";
@@ -1231,6 +1235,8 @@ export default function UniversalBatchCalculator({
                                 <option value="i22">เสาเข็มไอ I-22</option>
                                 <option value="i26">เสาเข็มไอ I-26</option>
                                 <option value="i30">เสาเข็มไอ I-30</option>
+                                <option value="i35">เสาเข็มไอ I-35</option>
+                                <option value="i40">เสาเข็มไอ I-40</option>
                               </optgroup>
                               <optgroup label="เสาสี่เหลี่ยมตัน S-Piles">
                                 <option value="s18">สี่เหลี่ยมตัน S-18</option>
