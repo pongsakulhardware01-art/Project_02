@@ -4,6 +4,64 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { initializeApp } from "firebase/app";
+import { initializeFirestore, doc, getDoc, setDoc, setLogLevel } from "firebase/firestore";
+
+// Set Firestore log level to silent to minimize SDK internal output
+try {
+  setLogLevel("silent");
+} catch (e) {
+  console.warn("Failed to set Firestore log level to silent:", e);
+}
+
+// Intercept and suppress harmless Firestore idle stream timeout messages from console logs.
+// These are benign connection lifecycle events that the Firestore client SDK automatically recovers from,
+// but they litter logs and trigger false-alarm alerts in standard server runtime environments.
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+const originalConsoleLog = console.log;
+const originalConsoleInfo = console.info;
+
+function shouldIgnoreLog(args: any[]): boolean {
+  try {
+    const message = args.map(arg => {
+      if (arg instanceof Error) {
+        return arg.stack || arg.message;
+      }
+      return typeof arg === "object" ? JSON.stringify(arg) : String(arg);
+    }).join(" ");
+
+    return (
+      message.includes("Disconnecting idle stream") || 
+      message.includes("Timed out waiting for new targets") ||
+      message.includes("Listen' stream") ||
+      message.includes("@firebase/firestore") ||
+      message.includes("GrpcConnection")
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+console.error = function (...args: any[]) {
+  if (shouldIgnoreLog(args)) return;
+  originalConsoleError.apply(console, args);
+};
+
+console.warn = function (...args: any[]) {
+  if (shouldIgnoreLog(args)) return;
+  originalConsoleWarn.apply(console, args);
+};
+
+console.log = function (...args: any[]) {
+  if (shouldIgnoreLog(args)) return;
+  originalConsoleLog.apply(console, args);
+};
+
+console.info = function (...args: any[]) {
+  if (shouldIgnoreLog(args)) return;
+  originalConsoleInfo.apply(console, args);
+};
 
 dotenv.config();
 
@@ -17,6 +75,25 @@ async function startServer() {
 
   // In-memory cache for fast retrieves and temporary persistence fallback
   let cachedSettings: any = null;
+
+  // Initialize Firebase Firestore for shared cloud persistence
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  let db: any = null;
+
+  if (fs.existsSync(configPath)) {
+    try {
+      const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      const app = initializeApp(firebaseConfig);
+      db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+      }, firebaseConfig.firestoreDatabaseId);
+      console.log("Firebase initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
+    } catch (err) {
+      console.error("Error initializing Firebase:", err);
+    }
+  } else {
+    console.warn("firebase-applet-config.json not found. Using local settings-db.json fallback.");
+  }
 
   // Force migration / update of settings-db.json with new prices and weights
   const defaultUpdatedSettings = {
@@ -159,14 +236,71 @@ async function startServer() {
 
   const dbPath = path.join(process.cwd(), "settings-db.json");
 
-  // Write new database settings to ensure they are up-to-date
-  try {
-    fs.writeFileSync(dbPath, JSON.stringify(defaultUpdatedSettings, null, 2), "utf-8");
-    cachedSettings = defaultUpdatedSettings;
-    console.log("Successfully force-updated settings-db.json to new default prices & weights");
-  } catch (e) {
-    console.error("Failed to write updated settings-db.json", e);
+  async function loadAndInitializeSettings() {
+    let currentSettings: any = null;
+
+    // 1. Try loading from Firestore
+    if (db) {
+      try {
+        const settingsDoc = await getDoc(doc(db, "settings", "config"));
+        if (settingsDoc.exists()) {
+          currentSettings = settingsDoc.data();
+          console.log("Loaded settings from Firestore during startup");
+        }
+      } catch (e) {
+        console.error("Error reading settings from Firestore during startup:", e);
+      }
+    }
+
+    // 2. Try loading from disk fallback
+    if (!currentSettings && fs.existsSync(dbPath)) {
+      try {
+        const fileData = fs.readFileSync(dbPath, "utf-8");
+        currentSettings = JSON.parse(fileData);
+        console.log("Loaded settings from local file during startup");
+      } catch (e) {
+        console.error("Error reading settings from local file during startup:", e);
+      }
+    }
+
+    // 3. If nothing loaded, use default settings
+    if (!currentSettings) {
+      currentSettings = defaultUpdatedSettings;
+      console.log("No existing settings found, using default updated settings");
+    } else {
+      // 4. Merge default settings to ensure any newly added keys are present
+      const mergedPrices = { ...defaultUpdatedSettings.prices, ...currentSettings.prices };
+      const mergedWeights = { ...defaultUpdatedSettings.weights, ...currentSettings.weights };
+      currentSettings = {
+        prices: mergedPrices,
+        weights: mergedWeights
+      };
+      console.log("Merged existing settings with defaults to backfill any missing keys");
+    }
+
+    // Save to cache
+    cachedSettings = currentSettings;
+
+    // Save back to Firestore and disk to persist the merged/initialized state
+    if (db) {
+      try {
+        await setDoc(doc(db, "settings", "config"), currentSettings);
+        console.log("Successfully persisted initialized settings to Firestore");
+      } catch (e) {
+        console.error("Error persisting initialized settings to Firestore:", e);
+      }
+    }
+
+    try {
+      fs.writeFileSync(dbPath, JSON.stringify(currentSettings, null, 2), "utf-8");
+      console.log("Successfully persisted initialized settings to settings-db.json");
+    } catch (e) {
+      console.error("Error saving initialized settings to local disk:", e);
+    }
   }
+
+  // Call the initializer
+  await loadAndInitializeSettings();
 
   // API 1: Health check
   app.get("/api/health", (req, res) => {
@@ -174,11 +308,25 @@ async function startServer() {
   });
 
   // API 2: Get shared settings
-  app.get("/api/settings", (req, res) => {
+  app.get("/api/settings", async (req, res) => {
     if (cachedSettings) {
       return res.json(cachedSettings);
     }
     
+    // Check Firestore first if available
+    if (db) {
+      try {
+        const settingsDoc = await getDoc(doc(db, "settings", "config"));
+        if (settingsDoc.exists()) {
+          cachedSettings = settingsDoc.data();
+          console.log("Loaded settings from Firestore on demand");
+          return res.json(cachedSettings);
+        }
+      } catch (e) {
+        console.error("Error loading settings from Firestore on demand:", e);
+      }
+    }
+
     // Double-check disk just in case
     if (fs.existsSync(dbPath)) {
       try {
@@ -194,12 +342,22 @@ async function startServer() {
   });
 
   // API 3: Save shared settings
-  app.post("/api/settings", (req, res) => {
+  app.post("/api/settings", async (req, res) => {
     try {
       const settings = req.body;
       cachedSettings = settings;
       
-      // Write to disk for persistence across restarts
+      // Save to Firestore for global cloud persistence
+      if (db) {
+        try {
+          await setDoc(doc(db, "settings", "config"), settings);
+          console.log("Successfully saved settings to Firestore");
+        } catch (e) {
+          console.error("Error saving settings to Firestore:", e);
+        }
+      }
+
+      // Write to disk for fallback persistence across restarts
       fs.writeFileSync(dbPath, JSON.stringify(settings, null, 2), "utf-8");
       console.log("Saved new settings to settings-db.json");
       

@@ -1010,7 +1010,7 @@ const parseSlabsTextClientSide = (
                 </div>
 
                 {/* SVG Visual Model Projection inside Slab */}
-                <SlabVisualizer length={length} wireCount={wireCount} />
+                <SlabVisualizer length={typeof length === "number" ? length : 0} wireCount={wireCount} />
               </div>
 
               {/* Calculation Summary Panel */}
@@ -1040,7 +1040,7 @@ const parseSlabsTextClientSide = (
                         </button>
                       </div>
                       <span className="text-lg opacity-85 block mt-1 font-light">
-                        (กว้าง 35 ซม. x ยาว {length.toFixed(2)} เมตร)
+                        (กว้าง 35 ซม. x ยาว {typeof length === "number" ? length.toFixed(2) : "0.00"} เมตร)
                       </span>
                     </div>
                   </div>

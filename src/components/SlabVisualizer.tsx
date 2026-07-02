@@ -6,6 +6,7 @@ interface SlabVisualizerProps {
 }
 
 export function SlabVisualizer({ length, wireCount }: SlabVisualizerProps) {
+  const numLength = typeof length === "number" ? length : (parseFloat(length as any) || 0);
   // Determine dots to show representing wires
   let dots = 4;
   if (wireCount === "5") dots = 5;
@@ -68,7 +69,7 @@ export function SlabVisualizer({ length, wireCount }: SlabVisualizerProps) {
             <polygon points="10,65 15,62 15,68" fill="#71717A" />
             <polygon points="150,65 145,62 145,68" fill="#71717A" />
             <text x="80" y="80" fill="#27272A" fontSize="11" fontWeight="600" textAnchor="middle" fontFamily="Kanit">
-              ยาว {length.toFixed(2)} ม.
+              ยาว {numLength.toFixed(2)} ม.
             </text>
           </svg>
           <span className="text-xs text-neutral-600 mt-1 font-medium">มุมมองด้านความยาวด้านข้าง</span>

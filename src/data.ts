@@ -1,6 +1,6 @@
 import { AppSettings } from "./types";
 
-export const APP_VERSION = "V.37";
+export const APP_VERSION = "V.39";
 
 export const defaultSettings: AppSettings = {
   prices: {

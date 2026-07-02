@@ -8,6 +8,7 @@ interface PileVisualizerProps {
 }
 
 export function PileVisualizer({ pileType, isJoint, isTis, length }: PileVisualizerProps) {
+  const numLength = typeof length === "number" ? length : (parseFloat(length as any) || 0);
   // Renders a modern preview of the selected pile design
   const getShapeName = () => {
     switch (pileType) {
@@ -124,7 +125,7 @@ export function PileVisualizer({ pileType, isJoint, isTis, length }: PileVisuali
             <polygon points="20,65 25,62 25,68" fill="#71717A" />
             <polygon points="130,65 125,62 125,68" fill="#71717A" />
             <text x="75" y="82" fill="#27272A" fontSize="11" fontWeight="600" textAnchor="middle" fontFamily="Kanit">
-              ความยาว {length.toFixed(2)} ม.
+              ความยาว {numLength.toFixed(2)} ม.
             </text>
           </svg>
           <span className="text-xs text-neutral-600 font-medium">มุมภาพด้านหน้า</span>
