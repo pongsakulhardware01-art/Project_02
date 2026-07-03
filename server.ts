@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp } from "firebase/app";
-import { initializeFirestore, doc, getDoc, setDoc, setLogLevel } from "firebase/firestore";
+import { initializeFirestore, doc, getDoc, setDoc, setLogLevel, onSnapshot } from "firebase/firestore";
 
 // Set Firestore log level to silent to minimize SDK internal output
 try {
@@ -302,29 +302,54 @@ async function startServer() {
   // Call the initializer
   await loadAndInitializeSettings();
 
+  // Set up real-time listener on settings in Firestore to update cachedSettings instantly across multiple server container instances
+  if (db) {
+    try {
+      onSnapshot(doc(db, "settings", "config"), (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const freshData = docSnapshot.data();
+          // Ensure it matches AppSettings structure approximately
+          if (freshData && freshData.prices && freshData.weights) {
+            cachedSettings = freshData;
+            console.log("Real-time settings updated from Firestore successfully.");
+            try {
+              fs.writeFileSync(dbPath, JSON.stringify(cachedSettings, null, 2), "utf-8");
+            } catch (err) {
+              // Silently ignore disk write errors
+            }
+          }
+        }
+      }, (error) => {
+        console.error("Error in real-time Firestore settings listener:", error);
+      });
+    } catch (e) {
+      console.error("Failed to register real-time settings listener:", e);
+    }
+  }
+
   // API 1: Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", cached: !!cachedSettings });
   });
 
-  // API 2: Get shared settings
+  // API 2: Get shared settings (Always check Firestore first for 100% accurate cloud sync, fallback to cachedSettings or local disk if offline)
   app.get("/api/settings", async (req, res) => {
-    if (cachedSettings) {
-      return res.json(cachedSettings);
-    }
-    
-    // Check Firestore first if available
+    // Check Firestore first if available for immediate real-time sync across the entire organization
     if (db) {
       try {
         const settingsDoc = await getDoc(doc(db, "settings", "config"));
         if (settingsDoc.exists()) {
           cachedSettings = settingsDoc.data();
-          console.log("Loaded settings from Firestore on demand");
           return res.json(cachedSettings);
         }
       } catch (e) {
         console.error("Error loading settings from Firestore on demand:", e);
       }
+    }
+
+    // Fallback to memory cache
+    if (cachedSettings) {
+      return res.json(cachedSettings);
     }
 
     // Double-check disk just in case

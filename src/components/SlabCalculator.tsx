@@ -186,6 +186,15 @@ export default function SlabCalculator({
 
   const [manualNormalPrice, setManualNormalPrice] = useState<number | "">(settings.prices.normalBoardPrice);
   const [manualMocPrice, setManualMocPrice] = useState<number | "">(settings.prices.mocBoardPrice);
+
+  // Sync manual baseline prices with cloud/shared settings in real-time
+  useEffect(() => {
+    setManualNormalPrice(settings.prices.normalBoardPrice);
+  }, [settings.prices.normalBoardPrice]);
+
+  useEffect(() => {
+    setManualMocPrice(settings.prices.mocBoardPrice);
+  }, [settings.prices.mocBoardPrice]);
   const [rawTextLines, setRawTextLines] = useState<string>(
     "0.35x2.00\n0.35x2.00 ลวด 5 เส้น\n0.35x2.00 ลวด 4 เส้น มอก."
   );
