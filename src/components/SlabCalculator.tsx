@@ -163,26 +163,7 @@ export default function SlabCalculator({
 
 
   // --- BATCH CALCULATOR (AI SCREENSHOT SCAN) STATE ---
-  const [scannedItems, setScannedItems] = useState<ScannedSlabItem[]>([
-    {
-      id: "demo-example-1",
-      length: 2.5,
-      count: 15,
-      boardType: "normal",
-      customPriceSqm: "",
-      wireCount: "auto",
-      label: "แผ่นพื้น 2.50 เมตร (ตัวอย่าง)"
-    },
-    {
-      id: "demo-example-2",
-      length: 3.5,
-      count: 20,
-      boardType: "m.o.c",
-      customPriceSqm: "",
-      wireCount: "7",
-      label: "แผ่น มอก. 3.50 เมตร (ตัวอย่าง)"
-    }
-  ]);
+  const [scannedItems, setScannedItems] = useState<ScannedSlabItem[]>([]);
 
   const [manualNormalPrice, setManualNormalPrice] = useState<number | "">(settings.prices.normalBoardPrice);
   const [manualMocPrice, setManualMocPrice] = useState<number | "">(settings.prices.mocBoardPrice);

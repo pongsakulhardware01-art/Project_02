@@ -125,9 +125,7 @@ export default function App() {
   }, []);
 
   // Global list of items inside Weight Calculator to preserve stats when switching screens
-  const [weightItems, setWeightItems] = useState<WeightItem[]>([
-    { id: "1", type: "slab", count: 10, length: 2.0 },
-  ]);
+  const [weightItems, setWeightItems] = useState<WeightItem[]>([]);
 
   // Current Thai Date Formatted
   const thaiDate = new Date().toLocaleDateString("th-TH", {

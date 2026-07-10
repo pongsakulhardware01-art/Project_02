@@ -55,37 +55,7 @@ export default function UniversalBatchCalculator({
   onNavigateToWeight
 }: UniversalBatchCalculatorProps) {
   // Items in the table state
-  const [items, setItems] = useState<UniversalBatchItem[]>([
-    {
-      id: "demo-slab-1",
-      category: "slab",
-      model: "normal",
-      length: 2.5,
-      count: 20,
-      wireCount: "auto",
-      tisStandard: "no_tis",
-      label: "แผ่นพื้นสำเร็จรูป 2.50 ม. (ตัวอย่าง)"
-    },
-    {
-      id: "demo-pile-1",
-      category: "pile",
-      model: "i18",
-      length: 6.0,
-      count: 10,
-      tisStandard: "tis",
-      connectionType: "single",
-      label: "เสาเข็มไอ I-18 ยาว 6.00 ม. มอก. (ตัวอย่าง)"
-    },
-    {
-      id: "demo-hc-1",
-      category: "hollow_core",
-      model: "hc",
-      length: 5.0,
-      count: 12,
-      hcWidth: 0.35,
-      label: "แผ่นพื้นกลวง 0.35x5.00 ม. (ตัวอย่าง)"
-    }
-  ]);
+  const [items, setItems] = useState<UniversalBatchItem[]>([]);
 
   // Pricing & rounding state
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
