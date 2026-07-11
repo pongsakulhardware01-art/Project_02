@@ -813,30 +813,15 @@ const parseSlabsTextClientSide = (
     <div className="space-y-6">
       
       {/* Selector tab for modes and Auto-Round Price Option */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-3 rounded-2xl border border-neutral-150 shadow-sm">
-        <div className="bg-neutral-100 p-1 rounded-xl flex items-center w-full sm:w-fit border border-neutral-200">
-          <button
-            onClick={() => setCalculatorMode("single")}
-            className={`flex-1 sm:flex-initial py-2.5 px-6 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-              calculatorMode === "single"
-                ? "bg-white text-[#C62828] shadow-sm"
-                : "text-neutral-500 hover:text-neutral-800"
-            }`}
-          >
-            <Calculator size={14} />
-            คำนวณรายแผ่นเดี่ยว ✏️
-          </button>
-          <button
-            onClick={() => setCalculatorMode("batch")}
-            className={`flex-1 sm:flex-initial py-2.5 px-6 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 focus:outline-none ${
-              calculatorMode === "batch"
-                ? "bg-white text-[#C62828] shadow-sm"
-                : "text-neutral-500 hover:text-neutral-800"
-            }`}
-          >
-            <Sparkles size={14} className="text-amber-500" />
-            สแกนภาพคำนวณหลายแผ่น 📸 (AI Scan)
-          </button>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-neutral-150 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-red-50 text-[#C62828] rounded-xl shrink-0">
+            <Calculator size={20} />
+          </div>
+          <div>
+            <h3 className="font-bold text-neutral-800 text-sm md:text-base leading-tight">เครื่องคำนวณราคาแผ่นสำเร็จรูปรายเดี่ยว</h3>
+            <p className="text-[11px] text-neutral-500 font-medium mt-0.5">คำนวณสเปก ราคา และกำลังแบกทานของแผ่นคอนกรีตอย่างละเอียด</p>
+          </div>
         </div>
 
         {/* Beautiful Auto-Round Price Toggle Button */}
