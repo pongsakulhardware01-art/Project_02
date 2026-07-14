@@ -1,8 +1,24 @@
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useState } from "react";
 import { AppSettings, WeightItem } from "../types";
 import { weightOptions, truckCapacities } from "../data";
-import { fmt } from "../utils";
-import { Plus, Trash2, ArrowUpRight, Scale, Truck, Minus, Info } from "lucide-react";
+import { fmt, getTruckAllocationOptions, TruckOption } from "../utils";
+import { 
+  Plus, 
+  Trash2, 
+  ArrowUpRight, 
+  Scale, 
+  Truck, 
+  Minus, 
+  Info, 
+  Copy, 
+  Check, 
+  TrendingUp, 
+  Layers, 
+  ShieldCheck, 
+  ChevronRight, 
+  HelpCircle,
+  Package
+} from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface WeightCalculatorProps {
@@ -54,6 +70,30 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
   };
 
   const totalWeight = items.reduce((sum, item) => sum + calculateItemWeight(item), 0);
+
+  const [selectedStrategy, setSelectedStrategy] = useState<string>("optimal_large");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const copyStrategyToClipboard = (option: TruckOption, index: number) => {
+    const truckListText = option.trucks
+      .map((t) => `  - ${t.name} จำนวน ${t.count} คัน (พิกัดคันละ ${fmt(t.capacityKg)} กก.)`)
+      .join("\n");
+    
+    const text = `📋 แผนแนะนำการจัดสรรรถขนส่งสินค้า (พงษ์สกุลคอนกรีต)\n` +
+      `-----------------------------------------\n` +
+      `• ยอดน้ำหนักวัสดุรวม: ${fmt(totalWeight)} กก. (${(totalWeight / 1000).toFixed(3)} ตัน)\n` +
+      `• รูปแบบการจัดส่งที่เลือก: ${option.title}\n` +
+      `• ขบวนรถที่แนะนำให้ใช้:\n${truckListText}\n` +
+      `• พิกัดรวมความจุทัพรถ: ${fmt(option.totalCapacity)} กก.\n` +
+      `• ประสิทธิภาพการใช้พื้นที่รถ: ${option.efficiency.toFixed(1)}%\n` +
+      `-----------------------------------------\n` +
+      `* คำนวณอัจฉริยะแบบเรียลไทม์โดยระบบ บจก. พงษ์สกุลฮาร์ดแวร์`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    });
+  };
 
   // Quick adjust adjustments helpers
   const adjustCount = (id: string, current: number | "", delta: number) => {
@@ -325,10 +365,10 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
         </div>
 
         {/* Truck visual Loading meters */}
-        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm space-y-4 flex-1">
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm space-y-4">
           <h4 className="font-semibold text-neutral-800 text-sm flex items-center gap-1.5 border-b border-neutral-100 pb-2.5">
             <Truck size={16} className="text-[#C62828]" />
-            ประมาณกำลังรับน้ำหนักของยานพาหนะบรรทุก
+            ประมาณกำลังรับน้ำหนักหากบรรทุกด้วยรถเดี่ยว 1 คัน
           </h4>
 
           <div className="space-y-4 pt-1">
@@ -381,6 +421,95 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
             })}
           </div>
         </div>
+
+        {/* Smart Transport Fleet Advisor Panel */}
+        {totalWeight > 0 && (
+          <div className="bg-white rounded-2xl p-6 border border-neutral-150 shadow-md space-y-4 flex-1">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/10 text-[#C62828] rounded-lg">
+                  <TrendingUp size={16} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-neutral-800 text-sm leading-none">ตัวเลือกการจัดทัพรถขนส่งอัจฉริยะ</h4>
+                  <p className="text-[10px] text-neutral-400 mt-1">จัดสรรทัพรถและประเภทที่เหมาะสมเมื่อวัสดุมีปริมาณมาก</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+              {getTruckAllocationOptions(totalWeight).map((option, idx) => {
+                const isSelected = selectedStrategy === option.type;
+                const isCopied = copiedIndex === idx;
+
+                return (
+                  <div
+                    key={option.type}
+                    onClick={() => setSelectedStrategy(option.type)}
+                    className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer relative ${
+                      isSelected
+                        ? "border-[#C62828] bg-red-50/20 shadow-sm"
+                        : "border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/50"
+                    }`}
+                  >
+                    {/* Tick icon for selection */}
+                    {isSelected && (
+                      <div className="absolute top-3.5 right-12 p-1 bg-[#C62828] text-white rounded-full">
+                        <ShieldCheck size={12} />
+                      </div>
+                    )}
+
+                    {/* Copy button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyStrategyToClipboard(option, idx);
+                      }}
+                      className={`absolute top-3.5 right-3 p-1.5 rounded-lg border transition ${
+                        isCopied
+                          ? "bg-green-100 border-green-300 text-green-700"
+                          : "bg-white border-neutral-200 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                      title="คัดลอกรายละเอียดส่งให้ทีมงาน/ลูกค้า"
+                    >
+                      {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+
+                    <div className="space-y-2 pr-12">
+                      <p className="text-xs font-extrabold text-neutral-800 flex items-center gap-1.5">
+                        <span>{option.title}</span>
+                      </p>
+                      <p className="text-[10px] text-neutral-500 leading-relaxed font-light">
+                        {option.description}
+                      </p>
+
+                      {/* Display fleet listing */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {option.trucks.map((truck, tIdx) => (
+                          <span
+                            key={tIdx}
+                            className="inline-flex items-center gap-1 text-[10px] bg-neutral-900 text-white font-semibold px-2 py-1 rounded-md"
+                          >
+                            <Truck size={10} className="text-amber-400" />
+                            {truck.name} x {truck.count} คัน
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Stats */}
+                      <div className="flex items-center justify-between pt-1 border-t border-neutral-100/60 text-[10px] text-neutral-500 font-medium">
+                        <span>พิกัดรวม: {fmt(option.totalCapacity)} กก.</span>
+                        <span className={option.efficiency > 85 ? "text-green-600 font-bold" : "text-neutral-600 font-bold"}>
+                          ประสิทธิภาพบรรทุก: {option.efficiency.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

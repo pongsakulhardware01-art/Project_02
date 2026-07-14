@@ -103,3 +103,128 @@ export function compressImage(
     }
   });
 }
+
+export interface TruckAllocationDetail {
+  name: string;
+  count: number;
+  capacityKg: number;
+}
+
+export interface TruckOption {
+  type: string;
+  title: string;
+  description: string;
+  trucks: TruckAllocationDetail[];
+  totalCapacity: number;
+  efficiency: number;
+}
+
+export function getTruckAllocationOptions(weightKg: number): TruckOption[] {
+  if (weightKg <= 0) return [];
+
+  const trucksConfig = [
+    { name: "รถบรรทุก 6 ล้อ", capacityKg: 7500 },
+    { name: "รถบรรทุก 10 ล้อ", capacityKg: 13500 },
+    { name: "รถบรรทุก 12 ล้อ", capacityKg: 16500 },
+    { name: "รถเทเลอร์", capacityKg: 25000 },
+    { name: "รถพ่วง", capacityKg: 31000 },
+  ];
+
+  const findSmallestTruckFor = (w: number) => {
+    return trucksConfig.find((t) => t.capacityKg >= w) || trucksConfig[trucksConfig.length - 1];
+  };
+
+  const options: TruckOption[] = [];
+
+  // 1. Optimal Large-First Mix (เน้นรถใหญ่ประหยัดค่าขนส่งต่อหน่วยสูงสุด)
+  {
+    const itemsMap: Record<string, number> = {};
+    let rem = weightKg;
+    
+    // Fill with largest truck (รถพ่วง 31 ตัน)
+    const largestCap = 31000;
+    const numLargest = Math.floor(rem / largestCap);
+    if (numLargest > 0) {
+      itemsMap["รถพ่วง"] = numLargest;
+      rem -= numLargest * largestCap;
+    }
+    
+    if (rem > 0) {
+      const smallestFit = findSmallestTruckFor(rem);
+      itemsMap[smallestFit.name] = (itemsMap[smallestFit.name] || 0) + 1;
+    }
+
+    const trucks = Object.entries(itemsMap).map(([name, count]) => {
+      const config = trucksConfig.find((t) => t.name === name)!;
+      return { name, count, capacityKg: config.capacityKg };
+    }).sort((a, b) => b.capacityKg - a.capacityKg);
+
+    const totalCapacity = trucks.reduce((sum, t) => sum + (t.capacityKg * t.count), 0);
+    const efficiency = totalCapacity > 0 ? (weightKg / totalCapacity) * 100 : 0;
+
+    options.push({
+      type: "optimal_large",
+      title: "ชุดผสมเน้นรถใหญ่ (เที่ยววิ่งรวมน้อย คุ้มราคาต่อหน่วยสุด)",
+      description: "เน้นการระบายน้ำหนักด้วยรถพ่วงเป็นหลัก แล้วใช้รถขนาดเล็กลงมารองรับเศษน้ำหนักที่เหลือ ช่วยลดจำนวนเที่ยวและค่าจ้างเฉลี่ยรวมได้ดีที่สุด",
+      trucks,
+      totalCapacity,
+      efficiency,
+    });
+  }
+
+  // 2. Optimal Medium-First Mix (เน้นรถขนาดกลางเพื่อความคล่องตัว เข้าซอยง่าย)
+  {
+    const itemsMap: Record<string, number> = {};
+    let rem = weightKg;
+    
+    // Fill with medium truck (รถบรรทุก 10 ล้อ 13.5 ตัน)
+    const medCap = 13500;
+    const numMed = Math.floor(rem / medCap);
+    if (numMed > 0) {
+      itemsMap["รถบรรทุก 10 ล้อ"] = numMed;
+      rem -= numMed * medCap;
+    }
+    
+    if (rem > 0) {
+      const smallestFit = findSmallestTruckFor(rem);
+      itemsMap[smallestFit.name] = (itemsMap[smallestFit.name] || 0) + 1;
+    }
+
+    const trucks = Object.entries(itemsMap).map(([name, count]) => {
+      const config = trucksConfig.find((t) => t.name === name)!;
+      return { name, count, capacityKg: config.capacityKg };
+    }).sort((a, b) => b.capacityKg - a.capacityKg);
+
+    const totalCapacity = trucks.reduce((sum, t) => sum + (t.capacityKg * t.count), 0);
+    const efficiency = totalCapacity > 0 ? (weightKg / totalCapacity) * 100 : 0;
+
+    options.push({
+      type: "optimal_medium",
+      title: "ชุดผสมเน้นรถ 10 ล้อ (คล่องตัวสูง เข้าซอกซอยหรือหน้างานแคบ)",
+      description: "เลือกกรณีทางเข้าโครงการก่อสร้างจำกัดความกว้าง รถเทเลอร์ใหญ่เข้าไม่ได้ โดยจะจัดสรรรถ 10 ล้อเป็นหลัก และเติมเต็มเศษน้ำหนักด้วยรถ 6 ล้อ",
+      trucks,
+      totalCapacity,
+      efficiency,
+    });
+  }
+
+  // 3. Single Uniform Truck Options (ใช้รถประเภทเดียวกันวิ่งซ้ำ)
+  trucksConfig.forEach((config) => {
+    const count = Math.ceil(weightKg / config.capacityKg);
+    if (count <= 12) {
+      const totalCapacity = config.capacityKg * count;
+      const efficiency = (weightKg / totalCapacity) * 100;
+      options.push({
+        type: `uniform_${config.capacityKg}`,
+        title: `ใช้เฉพาะ ${config.name} (ทั้งหมดจำนวน ${count} คัน/เที่ยว)`,
+        description: `ใช้เฉพาะรถบรรทุกประเภท ${config.name} วิ่งบรรทุกเป็นขบวนเดียว ง่ายต่อการควบคุม ดูแลหน้างาน และจัดเอกสารใบนำส่งทางเดียว`,
+        trucks: [{ name: config.name, count, capacityKg: config.capacityKg }],
+        totalCapacity,
+        efficiency,
+      });
+    }
+  });
+
+  return options;
+}
+

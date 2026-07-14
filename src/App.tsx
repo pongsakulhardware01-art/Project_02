@@ -8,6 +8,7 @@ import DrainageCalculator from "./components/DrainageCalculator";
 import WeightCalculator from "./components/WeightCalculator";
 import SettingsPanel from "./components/SettingsPanel";
 import UniversalBatchCalculator from "./components/UniversalBatchCalculator";
+import { getTruckAllocationOptions } from "./utils";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Calculator,
@@ -164,14 +165,30 @@ export default function App() {
   const totalWeightKg = weightItems.reduce((sum, item) => sum + calculateItemWeight(item), 0);
   const totalItemCount = weightItems.reduce((sum, item) => sum + (item.count === "" ? 0 : item.count), 0);
 
-  // Recommended truck based on weight
-  const getRecommendedTruck = () => {
-    if (totalWeightKg === 0) return null;
+  // Recommended truck fleet allocation based on weight
+  const getRecommendedTruckText = () => {
+    if (totalWeightKg === 0) return "";
+    
+    // If it fits in a single vehicle, find the best fit
     const fit = truckCapacities.find((truck) => truck.capacityKg >= totalWeightKg);
-    return fit || { name: "น้ำหนักเกินพิกัดสูงสุด", capacityKg: 31000, label: "รถพ่วงพิกัดเสริม" };
+    if (fit) {
+      return fit.name;
+    }
+    
+    // Otherwise, find the best mix option (Optimal Large-First Mix)
+    const options = getTruckAllocationOptions(totalWeightKg);
+    const optimal = options.find((opt) => opt.type === "optimal_large");
+    if (optimal && optimal.trucks.length > 0) {
+      return optimal.trucks.map((t) => {
+        const shortName = t.name.replace("รถบรรทุก ", "").replace("รถ", "");
+        return `${shortName} ${t.count} คัน`;
+      }).join(" + ");
+    }
+    
+    return "รถพ่วงพิกัดเสริม (น้ำหนักเกิน)";
   };
 
-  const recommendedTruck = getRecommendedTruck();
+  const recommendedTruckText = getRecommendedTruckText();
 
   // Current Thai Date Formatted
   const thaiDate = new Date().toLocaleDateString("th-TH", {
@@ -280,17 +297,13 @@ export default function App() {
                 {totalWeightKg.toLocaleString()} กิโลกรัม
               </p>
             </div>
-            {recommendedTruck && (
-              <div className="pt-2 border-t border-neutral-800 space-y-1.5">
-                <p className="text-[11px] text-neutral-400 flex justify-between">
-                  <span>รถจัดส่งแนะนำ:</span>
-                  <span className="font-extrabold text-[#F59E0B]">{recommendedTruck.name}</span>
-                </p>
-                <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-amber-500 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${Math.min(100, (totalWeightKg / recommendedTruck.capacityKg) * 100)}%` }}
-                  />
+            {recommendedTruckText && (
+              <div className="pt-2 border-t border-neutral-800 space-y-1">
+                <div className="text-[11px] text-neutral-400 flex justify-between items-start gap-1">
+                  <span className="shrink-0 text-neutral-400">รถจัดส่งที่แนะนำ:</span>
+                  <span className="font-extrabold text-[#F59E0B] text-right leading-tight">
+                    {recommendedTruckText}
+                  </span>
                 </div>
               </div>
             )}
