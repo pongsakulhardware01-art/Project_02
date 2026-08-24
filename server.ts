@@ -175,6 +175,79 @@ async function startServer() {
       basin100Price: 3400,
       basin120Price: 4900,
     },
+    costs: {
+      normalBoardPrice: 180,
+      mocBoardPrice: 195,
+      i15Price: 72,
+      i18NoTISPrice: 100,
+      i18TISPrice: 115,
+      i18JointPrice: 115,
+      i18TISJointPrice: 130,
+      i22NoTISPrice: 140,
+      i22TISPrice: 155,
+      i22JointPrice: 150,
+      i22TISJointPrice: 165,
+      i26NoTISPrice: 175,
+      i26NoTISJointPrice: 180,
+      i26TISPrice: 195,
+      i26TISJointPrice: 205,
+      i30NoTISPrice: 200,
+      i30NoTISJointPrice: 210,
+      i30TISPrice: 240,
+      i30TISJointPrice: 255,
+      i35TISPrice: 310,
+      i35TISJointPrice: 330,
+      i40TISPrice: 420,
+      i40TISJointPrice: 445,
+      hexPilePrice: 55,
+      s18Price: 140,
+      s18JointPrice: 150,
+      s22Price: 190,
+      s22JointPrice: 200,
+      s26Price: 230,
+      s26JointPrice: 245,
+      s30Price: 305,
+      s30JointPrice: 330,
+      s35Price: 405,
+      s35JointPrice: 430,
+      s40Price: 490,
+      s40JointPrice: 535,
+      fence3Price: 48,
+      fence4Price: 60,
+      hcPriceSqm: 560,
+      vatPercent: 7,
+      pipe030NoTISPrice: 105,
+      pipe030T3Price: 130,
+      pipe030T2Price: 145,
+      pipe040NoTISPrice: 155,
+      pipe040T3Price: 195,
+      pipe040T2Price: 220,
+      pipe050NoTISPrice: 230,
+      pipe050T3Price: 295,
+      pipe050T2Price: 330,
+      pipe060NoTISPrice: 310,
+      pipe060T3Price: 410,
+      pipe060T2Price: 460,
+      pipe080NoTISPrice: 610,
+      pipe080T3Price: 800,
+      pipe080T2Price: 900,
+      pipe100NoTISPrice: 980,
+      pipe100T3Price: 1270,
+      pipe100T2Price: 1430,
+      pipe120NoTISPrice: 1470,
+      pipe120T3Price: 1880,
+      pipe120T2Price: 2130,
+      pipe150NoTISPrice: 2620,
+      pipe150T3Price: 3280,
+      pipe150T2Price: 3690,
+      basin030Price: 280,
+      basin040Price: 410,
+      basin050Price: 615,
+      basin060Price: 900,
+      basin080Price: 1800,
+      basin100Price: 2780,
+      basin120Price: 4000,
+    },
     weights: {
       slab: 42.0,
       fence3: 14.0,
@@ -234,6 +307,38 @@ async function startServer() {
     }
   };
 
+  // Default updated settings with multi-supplier support
+  const defaultSuppliersList = [
+    {
+      id: "pongsakul_main",
+      name: "พงษ์สกุลฮาร์ดแวร์ (โรงงานหลัก)",
+      code: "PS-01",
+      isDefault: true,
+      description: "ราคากลางและพิกัดน้ำหนักมาตรฐานโรงงานพงษ์สกุลคอนกรีต",
+      prices: { ...defaultUpdatedSettings.prices },
+      costs: { ...defaultUpdatedSettings.costs },
+      weights: { ...defaultUpdatedSettings.weights },
+    },
+    {
+      id: "supplier_partner_2",
+      name: "ซัพพลายเออร์ 2 (โรงงานพาร์ทเนอร์)",
+      code: "SP-02",
+      isDefault: false,
+      description: "โรงงานพาร์ทเนอร์/ซัพพลายเออร์เสริม (สามารถแก้ไขราคาและน้ำหนักได้อิสระ)",
+      prices: { ...defaultUpdatedSettings.prices },
+      costs: { ...defaultUpdatedSettings.costs },
+      weights: { ...defaultUpdatedSettings.weights },
+    }
+  ];
+
+  const fullDefaultSettings = {
+    activeSupplierId: "pongsakul_main",
+    suppliers: defaultSuppliersList,
+    prices: { ...defaultUpdatedSettings.prices },
+    costs: { ...defaultUpdatedSettings.costs },
+    weights: { ...defaultUpdatedSettings.weights },
+  };
+
   const dbPath = path.join(process.cwd(), "settings-db.json");
 
   async function loadAndInitializeSettings() {
@@ -265,17 +370,44 @@ async function startServer() {
 
     // 3. If nothing loaded, use default settings
     if (!currentSettings) {
-      currentSettings = defaultUpdatedSettings;
-      console.log("No existing settings found, using default updated settings");
+      currentSettings = fullDefaultSettings;
+      console.log("No existing settings found, using full default multi-supplier settings");
     } else {
-      // 4. Merge default settings to ensure any newly added keys are present
-      const mergedPrices = { ...defaultUpdatedSettings.prices, ...currentSettings.prices };
-      const mergedWeights = { ...defaultUpdatedSettings.weights, ...currentSettings.weights };
+      // 4. Migrate and ensure suppliers array and activeSupplierId exist
+      const activeId = currentSettings.activeSupplierId || "pongsakul_main";
+      let suppliers = Array.isArray(currentSettings.suppliers) && currentSettings.suppliers.length > 0
+        ? currentSettings.suppliers
+        : [
+            {
+              id: "pongsakul_main",
+              name: "พงษ์สกุลฮาร์ดแวร์ (โรงงานหลัก)",
+              code: "PS-01",
+              isDefault: true,
+              description: "ราคากลางและพิกัดน้ำหนักมาตรฐานโรงงานพงษ์สกุลคอนกรีต",
+              prices: { ...defaultUpdatedSettings.prices, ...(currentSettings.prices || {}) },
+              costs: { ...defaultUpdatedSettings.costs, ...(currentSettings.costs || {}) },
+              weights: { ...defaultUpdatedSettings.weights, ...(currentSettings.weights || {}) },
+            }
+          ];
+
+      // Ensure each supplier in the array has all required price/cost/weight keys
+      suppliers = suppliers.map((sup: any) => ({
+        ...sup,
+        prices: { ...defaultUpdatedSettings.prices, ...(sup.prices || {}) },
+        costs: { ...defaultUpdatedSettings.costs, ...(sup.costs || {}) },
+        weights: { ...defaultUpdatedSettings.weights, ...(sup.weights || {}) },
+      }));
+
+      const activeSupplier = suppliers.find((s: any) => s.id === activeId) || suppliers[0];
+
       currentSettings = {
-        prices: mergedPrices,
-        weights: mergedWeights
+        activeSupplierId: activeSupplier ? activeSupplier.id : "pongsakul_main",
+        suppliers,
+        prices: activeSupplier ? activeSupplier.prices : defaultUpdatedSettings.prices,
+        costs: activeSupplier ? activeSupplier.costs : defaultUpdatedSettings.costs,
+        weights: activeSupplier ? activeSupplier.weights : defaultUpdatedSettings.weights,
       };
-      console.log("Merged existing settings with defaults to backfill any missing keys");
+      console.log("Migrated and synchronized multi-supplier settings schema");
     }
 
     // Save to cache
@@ -309,7 +441,7 @@ async function startServer() {
         if (docSnapshot.exists()) {
           const freshData = docSnapshot.data();
           // Ensure it matches AppSettings structure approximately
-          if (freshData && freshData.prices && freshData.weights) {
+          if (freshData && (freshData.prices || freshData.suppliers)) {
             cachedSettings = freshData;
             console.log("Real-time settings updated from Firestore successfully.");
             try {

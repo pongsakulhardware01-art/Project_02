@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { AppSettings, WeightItem } from "./types";
-import { defaultSettings, APP_VERSION, weightOptions, truckCapacities } from "./data";
+import { defaultSettings, defaultSuppliers, APP_VERSION, weightOptions, truckCapacities } from "./data";
 import SlabCalculator from "./components/SlabCalculator";
 import PileCalculator from "./components/PileCalculator";
 import HollowCoreCalculator from "./components/HollowCoreCalculator";
@@ -29,7 +29,10 @@ import {
   Database,
   Truck,
   TrendingUp,
-  FileText
+  FileText,
+  Factory,
+  Building2,
+  Check
 } from "lucide-react";
 
 const MenuCard = ({
@@ -96,7 +99,10 @@ export default function App() {
     const baked = (window as any).BAKED_SETTINGS;
     if (baked && typeof baked === "object") {
       return {
+        activeSupplierId: baked.activeSupplierId || defaultSettings.activeSupplierId,
+        suppliers: (baked.suppliers && baked.suppliers.length > 0) ? baked.suppliers : defaultSuppliers,
         prices: { ...defaultSettings.prices, ...baked.prices },
+        costs: { ...defaultSettings.costs, ...baked.costs },
         weights: { ...defaultSettings.weights, ...baked.weights },
       };
     }
@@ -106,7 +112,10 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         return {
+          activeSupplierId: parsed.activeSupplierId || defaultSettings.activeSupplierId,
+          suppliers: (parsed.suppliers && parsed.suppliers.length > 0) ? parsed.suppliers : defaultSuppliers,
           prices: { ...defaultSettings.prices, ...parsed.prices },
+          costs: { ...defaultSettings.costs, ...parsed.costs },
           weights: { ...defaultSettings.weights, ...parsed.weights },
         };
       } catch (e) {
@@ -189,6 +198,36 @@ export default function App() {
   };
 
   const recommendedTruckText = getRecommendedTruckText();
+
+  // Active supplier detection
+  const suppliersList = settings.suppliers && settings.suppliers.length > 0 ? settings.suppliers : defaultSuppliers;
+  const activeSupplier = suppliersList.find((s) => s.id === (settings.activeSupplierId || "pongsakul_main")) || suppliersList[0];
+
+  const handleSelectSupplier = async (supplierId: string) => {
+    const target = suppliersList.find((s) => s.id === supplierId);
+    if (!target) return;
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      activeSupplierId: supplierId,
+      prices: target.prices,
+      weights: target.weights,
+      suppliers: suppliersList,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+    } catch (e) {
+      // Offline fallback
+    }
+  };
 
   // Current Thai Date Formatted
   const thaiDate = new Date().toLocaleDateString("th-TH", {
@@ -415,6 +454,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Active Supplier Quick Badge in Header */}
+            <button
+              onClick={() => handleScreenChange("settings")}
+              className="flex items-center gap-2 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200/80 text-neutral-700 rounded-full border border-neutral-200/60 transition cursor-pointer text-xs"
+              title="คลิกเพื่อจัดการหรือสลับซัพพลายเออร์"
+            >
+              <Factory size={13} className="text-[#C62828]" />
+              <span className="font-semibold text-neutral-600">ซัพพลายเออร์:</span>
+              <span className="font-bold text-neutral-900 bg-white px-2 py-0.5 rounded-full border border-neutral-200/80">
+                {activeSupplier.name}
+              </span>
+            </button>
+
             <span className="text-xs font-mono text-neutral-500 bg-neutral-100 px-3 py-1.5 rounded-full border border-neutral-200/50 flex items-center gap-1.5">
               <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               เชื่อมคลาวด์สตรีม
@@ -457,10 +509,10 @@ export default function App() {
                 </div>
 
                 {/* 2. LIVE DASHBOARD QUICK SUMMARY (STATS TILES) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                   <div className="bg-white rounded-2xl p-5 border border-neutral-200/60 shadow-sm flex items-center justify-between">
                     <div className="space-y-1">
-                      <p className="text-xs font-bold text-neutral-400">ราคากลางแผ่นสำเร็จทั่วไป</p>
+                      <p className="text-xs font-bold text-neutral-400">ราคากลางแผ่นทั่วไป</p>
                       <p className="text-2xl font-black font-mono text-neutral-800">
                         ฿{settings.prices.normalBoardPrice} <span className="text-xs font-bold text-neutral-400">/ตร.ม.</span>
                       </p>
@@ -472,13 +524,34 @@ export default function App() {
 
                   <div className="bg-white rounded-2xl p-5 border border-neutral-200/60 shadow-sm flex items-center justify-between">
                     <div className="space-y-1">
-                      <p className="text-xs font-bold text-neutral-400">ราคากลางแผ่น มอก. (TIS)</p>
+                      <p className="text-xs font-bold text-neutral-400">ราคากลางแผ่น มอก.</p>
                       <p className="text-2xl font-black font-mono text-neutral-800">
                         ฿{settings.prices.mocBoardPrice} <span className="text-xs font-bold text-neutral-400">/ตร.ม.</span>
                       </p>
                     </div>
                     <div className="p-3 bg-red-50 text-[#C62828] rounded-xl">
                       <Layers size={20} />
+                    </div>
+                  </div>
+
+                  <div 
+                    onClick={() => handleScreenChange("settings")}
+                    className="bg-white hover:bg-neutral-50/80 cursor-pointer rounded-2xl p-5 border border-neutral-200/60 shadow-sm flex items-center justify-between transition group"
+                  >
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-neutral-400 flex items-center gap-1">
+                        ซัพพลายเออร์ที่เลือก
+                        <ChevronRight size={12} className="text-neutral-400 group-hover:text-[#C62828] transition" />
+                      </p>
+                      <p className="text-lg font-black text-neutral-800 truncate max-w-[150px]">
+                        {activeSupplier.name}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 font-mono">
+                        รหัส: {activeSupplier.code || activeSupplier.id}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-red-50 text-[#C62828] rounded-xl group-hover:bg-[#C62828] group-hover:text-white transition">
+                      <Factory size={20} />
                     </div>
                   </div>
 
@@ -589,16 +662,32 @@ export default function App() {
                       weightItems={weightItems}
                       setWeightItems={setWeightItems}
                       onNavigateToWeight={() => handleScreenChange("weight")}
+                      onSelectSupplier={handleSelectSupplier}
+                      onNavigateToSettings={() => handleScreenChange("settings")}
                     />
                   )}
-                  {priceSubTab === "pile" && <PileCalculator settings={settings} />}
-                  {priceSubTab === "hollowCore" && <HollowCoreCalculator settings={settings} />}
+                  {priceSubTab === "pile" && (
+                    <PileCalculator 
+                      settings={settings} 
+                      onSelectSupplier={handleSelectSupplier}
+                      onNavigateToSettings={() => handleScreenChange("settings")}
+                    />
+                  )}
+                  {priceSubTab === "hollowCore" && (
+                    <HollowCoreCalculator 
+                      settings={settings} 
+                      onSelectSupplier={handleSelectSupplier}
+                      onNavigateToSettings={() => handleScreenChange("settings")}
+                    />
+                  )}
                   {priceSubTab === "drainage" && (
                     <DrainageCalculator 
                       settings={settings} 
                       weightItems={weightItems}
                       setWeightItems={setWeightItems}
                       onNavigateToWeight={() => handleScreenChange("weight")}
+                      onSelectSupplier={handleSelectSupplier}
+                      onNavigateToSettings={() => handleScreenChange("settings")}
                     />
                   )}
                 </div>
@@ -617,6 +706,8 @@ export default function App() {
                     weightItems={weightItems}
                     setWeightItems={setWeightItems} 
                     onNavigateToWeight={() => handleScreenChange("weight")}
+                    onSelectSupplier={handleSelectSupplier}
+                    onNavigateToSettings={() => handleScreenChange("settings")}
                   />
                 </div>
               </motion.div>
@@ -629,7 +720,13 @@ export default function App() {
                 transition={{ duration: 0.18 }}
               >
                 <div className="bg-white rounded-3xl p-1 md:p-2 border border-neutral-200/60 shadow-sm">
-                  <WeightCalculator settings={settings} items={weightItems} setItems={setWeightItems} />
+                  <WeightCalculator 
+                    settings={settings} 
+                    items={weightItems} 
+                    setItems={setWeightItems} 
+                    onSelectSupplier={handleSelectSupplier}
+                    onNavigateToSettings={() => handleScreenChange("settings")}
+                  />
                 </div>
               </motion.div>
             ) : (

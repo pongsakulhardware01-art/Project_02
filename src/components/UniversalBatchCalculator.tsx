@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
 import { AppSettings, WeightItem } from "../types";
 import { fmt, roundToBeautifulPrice, compressImage } from "../utils";
+import SupplierQuickSelector from "./SupplierQuickSelector";
+import DeliveryDistanceWidget from "./DeliveryDistanceWidget";
 import {
   Camera,
   Upload,
@@ -21,7 +23,9 @@ import {
   ChevronDown,
   Hammer,
   Copy,
-  Check
+  Check,
+  Truck,
+  MapPin
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -30,6 +34,8 @@ interface UniversalBatchCalculatorProps {
   weightItems: WeightItem[];
   setWeightItems: Dispatch<SetStateAction<WeightItem[]>>;
   onNavigateToWeight: () => void;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
 export interface UniversalBatchItem {
@@ -52,7 +58,9 @@ export default function UniversalBatchCalculator({
   settings,
   weightItems,
   setWeightItems,
-  onNavigateToWeight
+  onNavigateToWeight,
+  onSelectSupplier,
+  onNavigateToSettings
 }: UniversalBatchCalculatorProps) {
   // Items in the table state
   const [items, setItems] = useState<UniversalBatchItem[]>([]);
@@ -61,6 +69,9 @@ export default function UniversalBatchCalculator({
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
     return localStorage.getItem("pongsakulAutoRoundPrice") === "true";
   });
+
+  const [appliedDeliveryFee, setAppliedDeliveryFee] = useState<number>(0);
+  const [appliedDeliveryDist, setAppliedDeliveryDist] = useState<number | null>(null);
 
   const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
 
@@ -772,7 +783,7 @@ export default function UniversalBatchCalculator({
   const totalWeightTons = totalWeightKg / 1000;
   const totalPriceBeforeTax = calculatedRows.reduce((sum, r) => sum + r.rowPriceTotal, 0);
   const vatAmountCost = totalPriceBeforeTax * 0.07;
-  const grandTotalCost = totalPriceBeforeTax + vatAmountCost;
+  const grandTotalCost = totalPriceBeforeTax + vatAmountCost + appliedDeliveryFee;
   const totalQtyCount = calculatedRows.reduce((sum, r) => sum + (r.count === "" ? 0 : r.count), 0);
   const totalAreaSqm = calculatedRows.reduce((sum, r) => sum + r.rowAreaTotal, 0);
 
@@ -882,6 +893,12 @@ export default function UniversalBatchCalculator({
 
   return (
     <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
       
       {/* Dynamic topbar with auto-round toggler */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1456,14 +1473,24 @@ export default function UniversalBatchCalculator({
               <div className="bg-gradient-to-br from-red-50 to-[#FFF3F3] border border-red-200 p-3 rounded-2xl">
                 <span className="text-[10px] sm:text-xs font-bold text-[#8B0000] block uppercase">ราคารวมหลังหักสุทธิ (ม.)</span>
                 <strong className="text-base sm:text-xl text-[#C62828] font-mono font-black">฿{fmt(grandTotalCost)}</strong>
-                <span className="text-[9px] text-neutral-450 block font-light mt-0.5">(รวมภาษี VAT 7% แล้ว)</span>
+                <span className="text-[9px] text-neutral-450 block font-light mt-0.5">
+                  (รวม VAT 7%{appliedDeliveryFee > 0 ? ` + ค่าส่ง ฿${fmt(appliedDeliveryFee)}` : ""})
+                </span>
               </div>
             </div>
 
             {/* Bottom tools action indicators */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="text-xs text-neutral-400">
-                ราคาฐานก่อนรวมภาษี: <strong className="font-semibold text-neutral-700">฿{fmt(totalPriceBeforeTax)}</strong> • ค่าภาษี 7%: <strong className="font-semibold text-neutral-700">฿{fmt(vatAmountCost)}</strong>
+              <div className="text-xs text-neutral-400 space-y-0.5">
+                <div>
+                  ราคาฐานก่อนรวมภาษี: <strong className="font-semibold text-neutral-700">฿{fmt(totalPriceBeforeTax)}</strong> • ค่าภาษี 7%: <strong className="font-semibold text-neutral-700">฿{fmt(vatAmountCost)}</strong>
+                </div>
+                {appliedDeliveryFee > 0 && (
+                  <div className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <Truck size={13} />
+                    <span>บวกค่าจัดส่งทางไกล ({appliedDeliveryDist ? `${appliedDeliveryDist} กม.` : "ตามระยะทาง"}): <strong>฿{fmt(appliedDeliveryFee)}</strong></span>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2">
@@ -1497,6 +1524,19 @@ export default function UniversalBatchCalculator({
           </div>
         </div>
       </div>
+
+      {/* Embedded Delivery Distance & Cost Widget */}
+      <DeliveryDistanceWidget
+        settings={settings}
+        totalWeightKg={totalWeightKg}
+        orderAmount={grandTotalCost}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+        onApplyDeliveryFee={(fee, dist) => {
+          setAppliedDeliveryFee(fee);
+          setAppliedDeliveryDist(dist);
+        }}
+      />
 
       {/* Modern PDF Quotation Bill Modal */}
       {showQuotationModal && (
@@ -1580,11 +1620,16 @@ export default function UniversalBatchCalculator({
                 <div>
                   ภาษีมูลค่าเพิ่ม VAT 7%: <strong className="font-semibold text-neutral-800 font-mono">฿{fmt(vatAmountCost)}</strong>
                 </div>
+                {appliedDeliveryFee > 0 && (
+                  <div className="text-emerald-700 font-semibold">
+                    ค่าบริการจัดส่งสินค้า ({appliedDeliveryDist ? `${appliedDeliveryDist} กม.` : "ตามระยะทาง"}): <strong className="font-mono">฿{fmt(appliedDeliveryFee)}</strong>
+                  </div>
+                )}
                 <div>
                   รวมพิกัดระวางบรรทุก: <strong className="font-semibold text-neutral-800 font-mono">{fmt(totalWeightTons)} ตัน</strong>
                 </div>
                 <div className="text-[#C62828] text-base font-black pt-2 flex items-center gap-2">
-                  <span>ราคาสุทธิใบประเมินหน้าด่าน (รวม VAT):</span>
+                  <span>ราคาสุทธิใบประเมินหน้าด่าน (รวม VAT & ค่าส่ง):</span>
                   <span className="font-mono text-lg">฿{fmt(grandTotalCost)}</span>
                 </div>
               </div>

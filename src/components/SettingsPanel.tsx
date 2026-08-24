@@ -1,9 +1,45 @@
-import React, { useRef, useState } from "react";
-import { AppSettings, Prices, Weights } from "../types";
-import { defaultSettings, APP_VERSION } from "../data";
+import React, { useRef, useState, useEffect } from "react";
+import { AppSettings, Prices, Weights, SupplierProfile, SupplierLocation, DeliveryConfig, DistanceTier } from "../types";
+import { defaultSettings, defaultPrices, defaultCosts, defaultWeights, defaultSuppliers, defaultDistanceTiers, APP_VERSION } from "../data";
 import { fmt } from "../utils";
+import { parseGoogleMapsInput, isValidLatLng, PRESET_LOCATIONS, createGoogleMapsDirectionsUrl } from "../utils/geoUtils";
+import { PriceCostMarkupItem } from "./PriceCostMarkupCard";
+import { BulkMarkupToolbar } from "./BulkMarkupToolbar";
+import { SupplierPricingSection } from "./SupplierPricingSection";
+import { SupplierWeightsSection } from "./SupplierWeightsSection";
 import html2canvas from "html2canvas";
-import { Save, RotateCcw, Image, Settings, Percent, DollarSign, Scale, CheckCircle2, Download } from "lucide-react";
+import {
+  Save,
+  RotateCcw,
+  Image,
+  Settings,
+  Percent,
+  DollarSign,
+  Scale,
+  CheckCircle2,
+  Download,
+  Plus,
+  Trash2,
+  Copy,
+  Building2,
+  Factory,
+  Edit3,
+  Check,
+  MapPin,
+  Phone,
+  Info,
+  AlertCircle,
+  ExternalLink,
+  ShieldCheck,
+  ChevronRight,
+  Layers,
+  Truck,
+  Navigation,
+  Compass,
+  TrendingUp,
+  Tag
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -11,15 +47,332 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ settings, setSettings }: SettingsPanelProps) {
-  const [pricesInput, setPricesInput] = useState<Prices>({ ...settings.prices });
-  const [weightsInput, setWeightsInput] = useState<Weights>({ ...settings.weights });
+  // Ensure suppliers list is always valid
+  const currentSuppliers: SupplierProfile[] = (settings.suppliers && settings.suppliers.length > 0)
+    ? settings.suppliers
+    : defaultSuppliers;
+
+  // Selected supplier in settings panel (the one being viewed/edited)
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>(
+    settings.activeSupplierId || currentSuppliers[0]?.id || "pongsakul_main"
+  );
+
+  const currentSupplier = currentSuppliers.find((s) => s.id === selectedSupplierId) || currentSuppliers[0];
+
+  // Form states for the selected supplier's profile, prices, costs, and weights
+  const [supplierName, setSupplierName] = useState<string>(currentSupplier?.name || "พงษ์สกุลฮาร์ดแวร์ (โรงงานหลัก)");
+  const [supplierCode, setSupplierCode] = useState<string>(currentSupplier?.code || "PS-01");
+  const [supplierDesc, setSupplierDesc] = useState<string>(currentSupplier?.description || "");
+  const [pricesInput, setPricesInput] = useState<Prices>({ ...(currentSupplier?.prices || settings.prices || defaultPrices) });
+  const [costsInput, setCostsInput] = useState<Prices>({ ...(currentSupplier?.costs || settings.costs || defaultCosts) });
+  const [weightsInput, setWeightsInput] = useState<Weights>({ ...(currentSupplier?.weights || settings.weights || defaultWeights) });
+
+  // Tab state between Prices (with Cost & Markup) and Weights
+  const [activePriceWeightTab, setActivePriceWeightTab] = useState<"prices" | "weights">("prices");
+
+  // Location & Google Maps States
+  const [supplierAddress, setSupplierAddress] = useState<string>(
+    currentSupplier?.supplierLocation?.address || currentSupplier?.location || "125 หมู่ 4 ต.ท่าทราย อ.เมือง จ.สมุทรสาคร 74000"
+  );
+  const [supplierMapsUrl, setSupplierMapsUrl] = useState<string>(
+    currentSupplier?.supplierLocation?.mapsUrl || "https://maps.google.com/?q=13.5475,100.2745"
+  );
+  const [supplierLat, setSupplierLat] = useState<number | undefined>(
+    currentSupplier?.supplierLocation?.lat ?? 13.5475
+  );
+  const [supplierLng, setSupplierLng] = useState<number | undefined>(
+    currentSupplier?.supplierLocation?.lng ?? 100.2745
+  );
+
+  // Delivery Policy States
+  const [distanceTiers, setDistanceTiers] = useState<DistanceTier[]>(() => {
+    return currentSupplier?.deliveryConfig?.distanceTiers && currentSupplier.deliveryConfig.distanceTiers.length > 0
+      ? currentSupplier.deliveryConfig.distanceTiers
+      : defaultDistanceTiers;
+  });
+  const [excessRatePerKm, setExcessRatePerKm] = useState<number>(
+    currentSupplier?.deliveryConfig?.excessRatePerKm ?? 35
+  );
+  const [pricingMode, setPricingMode] = useState<"tiered" | "per_km">(
+    currentSupplier?.deliveryConfig?.pricingMode ?? "tiered"
+  );
+  const [freeRadiusKm, setFreeRadiusKm] = useState<number>(
+    currentSupplier?.deliveryConfig?.freeRadiusKm ?? 30
+  );
+  const [ratePerKm, setRatePerKm] = useState<number>(
+    currentSupplier?.deliveryConfig?.ratePerKm ?? 25
+  );
+  const [basePrice, setBasePrice] = useState<number>(
+    currentSupplier?.deliveryConfig?.basePrice ?? 0
+  );
+  const [minOrderFreeAmount, setMinOrderFreeAmount] = useState<number>(
+    currentSupplier?.deliveryConfig?.minOrderFreeAmount ?? 0
+  );
+
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
+
+  // Sync inputs when selected supplier changes
+  useEffect(() => {
+    const sup = currentSuppliers.find((s) => s.id === selectedSupplierId) || currentSuppliers[0];
+    if (sup) {
+      setSupplierName(sup.name);
+      setSupplierCode(sup.code || "");
+      setSupplierDesc(sup.description || "");
+      setPricesInput({ ...(sup.prices || defaultPrices) });
+      setCostsInput({ ...(sup.costs || defaultCosts) });
+      setWeightsInput({ ...(sup.weights || defaultWeights) });
+      setSupplierAddress(sup.supplierLocation?.address || sup.location || "");
+      setSupplierMapsUrl(sup.supplierLocation?.mapsUrl || "");
+      setSupplierLat(sup.supplierLocation?.lat ?? 13.5475);
+      setSupplierLng(sup.supplierLocation?.lng ?? 100.2745);
+
+      const tiers = sup.deliveryConfig?.distanceTiers && sup.deliveryConfig.distanceTiers.length > 0
+        ? sup.deliveryConfig.distanceTiers
+        : defaultDistanceTiers;
+      setDistanceTiers(tiers);
+      setExcessRatePerKm(sup.deliveryConfig?.excessRatePerKm ?? 35);
+      setPricingMode(sup.deliveryConfig?.pricingMode ?? "tiered");
+      setFreeRadiusKm(sup.deliveryConfig?.freeRadiusKm ?? 30);
+      setRatePerKm(sup.deliveryConfig?.ratePerKm ?? 25);
+      setBasePrice(sup.deliveryConfig?.basePrice ?? 0);
+      setMinOrderFreeAmount(sup.deliveryConfig?.minOrderFreeAmount ?? 0);
+    }
+  }, [selectedSupplierId]);
+
+  // Instant Location Update Handler (immediately updates state, settings, and cloud sync)
+  const handleInstantLocationUpdate = (
+    nextAddr: string,
+    nextLat: number | undefined,
+    nextLng: number | undefined,
+    nextMapsUrl: string,
+    noticeText?: string
+  ) => {
+    setSupplierAddress(nextAddr);
+    setSupplierLat(nextLat);
+    setSupplierLng(nextLng);
+    setSupplierMapsUrl(nextMapsUrl);
+
+    if (noticeText) {
+      setLocationNotice(noticeText);
+      setTimeout(() => setLocationNotice(null), 3000);
+    }
+
+    const updatedLocation: SupplierLocation = {
+      address: nextAddr.trim() || "ต.ท่าทราย อ.เมือง จ.สมุทรสาคร",
+      mapsUrl: nextMapsUrl.trim(),
+      lat: nextLat,
+      lng: nextLng,
+      placeName: supplierName.trim(),
+    };
+
+    const updatedDeliveryConfig: DeliveryConfig = {
+      pricingMode,
+      distanceTiers,
+      excessRatePerKm,
+      freeRadiusKm: Number(freeRadiusKm) || 0,
+      ratePerKm: Number(ratePerKm) || 0,
+      basePrice: Number(basePrice) || 0,
+      minOrderFreeAmount: Number(minOrderFreeAmount) || 0,
+    };
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          location: nextAddr.trim(),
+          supplierLocation: updatedLocation,
+          deliveryConfig: updatedDeliveryConfig,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      prices: activeObj.prices,
+      costs: activeObj.costs,
+      weights: activeObj.weights,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    // Non-blocking sync to server
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+  };
+
+  // Instant Delivery Tier Update Handler
+  const handleInstantDeliveryTierUpdate = (
+    nextTiers: DistanceTier[],
+    nextExcessRate: number,
+    nextMinOrder: number,
+    nextMode: "tiered" | "per_km" = "tiered"
+  ) => {
+    setDistanceTiers(nextTiers);
+    setExcessRatePerKm(nextExcessRate);
+    setMinOrderFreeAmount(nextMinOrder);
+    setPricingMode(nextMode);
+
+    // Compute free radius from tier 0 if price is 0
+    const freeTier = nextTiers.find((t) => t.price === 0);
+    const computedFreeRadius = freeTier ? freeTier.maxKm : 0;
+    setFreeRadiusKm(computedFreeRadius);
+
+    const updatedLocation: SupplierLocation = {
+      address: supplierAddress.trim() || "ต.ท่าทราย อ.เมือง จ.สมุทรสาคร",
+      mapsUrl: supplierMapsUrl.trim(),
+      lat: supplierLat,
+      lng: supplierLng,
+      placeName: supplierName.trim(),
+    };
+
+    const updatedDeliveryConfig: DeliveryConfig = {
+      pricingMode: nextMode,
+      distanceTiers: nextTiers,
+      excessRatePerKm: nextExcessRate,
+      freeRadiusKm: computedFreeRadius,
+      ratePerKm: nextExcessRate,
+      basePrice: 0,
+      minOrderFreeAmount: nextMinOrder,
+    };
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          supplierLocation: updatedLocation,
+          deliveryConfig: updatedDeliveryConfig,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      prices: activeObj.prices,
+      costs: activeObj.costs,
+      weights: activeObj.weights,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+  };
+
+  // Add new tier with auto-calculated ranges
+  const handleAddTier = () => {
+    const sorted = [...distanceTiers].sort((a, b) => a.minKm - b.minKm);
+    const last = sorted[sorted.length - 1];
+    const newMin = last ? last.maxKm + 1 : 0;
+    const newMax = last ? last.maxKm + 30 : 30;
+    const newPrice = last ? (last.price || 0) + 1500 : 0;
+
+    const newTier: DistanceTier = {
+      id: `tier-${Date.now()}`,
+      minKm: newMin,
+      maxKm: newMax,
+      price: newPrice,
+    };
+
+    const nextTiers = [...distanceTiers, newTier];
+    handleInstantDeliveryTierUpdate(nextTiers, excessRatePerKm, minOrderFreeAmount, pricingMode);
+  };
+
+  // Update specific tier field
+  const handleUpdateTier = (index: number, field: "minKm" | "maxKm" | "price", val: number) => {
+    const nextTiers = distanceTiers.map((t, idx) => {
+      if (idx === index) {
+        return { ...t, [field]: Math.max(0, val) };
+      }
+      return t;
+    });
+    handleInstantDeliveryTierUpdate(nextTiers, excessRatePerKm, minOrderFreeAmount, pricingMode);
+  };
+
+  // Delete a tier
+  const handleDeleteTier = (index: number) => {
+    if (distanceTiers.length <= 1) return;
+    const nextTiers = distanceTiers.filter((_, idx) => idx !== index);
+    handleInstantDeliveryTierUpdate(nextTiers, excessRatePerKm, minOrderFreeAmount, pricingMode);
+  };
+
+  // Reset to standard tiers
+  const handleResetTiers = () => {
+    handleInstantDeliveryTierUpdate(defaultDistanceTiers, 35, minOrderFreeAmount, "tiered");
+  };
+
+  // Handle Google Maps Input Parse for Supplier Location with Instant Update
+  const handleParseSupplierLocation = (inputVal: string) => {
+    setSupplierMapsUrl(inputVal);
+    if (!inputVal.trim()) {
+      handleInstantLocationUpdate(supplierAddress, undefined, undefined, inputVal);
+      return;
+    }
+
+    const parsed = parseGoogleMapsInput(inputVal);
+    if (isValidLatLng(parsed.lat, parsed.lng)) {
+      const nextAddr = (parsed.address && !supplierAddress) ? parsed.address : supplierAddress;
+      handleInstantLocationUpdate(
+        nextAddr,
+        parsed.lat,
+        parsed.lng,
+        inputVal,
+        `⚡ อัปเดตพิกัดทันที: ${parsed.lat?.toFixed(4)}, ${parsed.lng?.toFixed(4)}`
+      );
+    } else {
+      handleInstantLocationUpdate(supplierAddress, supplierLat, supplierLng, inputVal);
+    }
+  };
+
+  // Modal for adding a new supplier
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [newSupName, setNewSupName] = useState<string>("");
+  const [newSupCode, setNewSupCode] = useState<string>("");
+  const [newSupDesc, setNewSupDesc] = useState<string>("");
+  const [newSupBaseTemplate, setNewSupBaseTemplate] = useState<string>(selectedSupplierId || "default");
+
+  // Notifications & export states
   const [notif, setNotif] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const showNotify = (msg: string) => {
     setNotif(msg);
-    setTimeout(() => setNotif(null), 3500);
+    setTimeout(() => setNotif(null), 4000);
+  };
+
+  // Cost, Markup, and Price Change Handlers
+  const handleCostChange = (field: keyof Prices, costVal: number) => {
+    const currentPrice = pricesInput[field] ?? 0;
+    const oldCost = costsInput[field] ?? 0;
+    const currentMarkup = Math.max(0, Number((currentPrice - oldCost).toFixed(2)));
+    const newPrice = Number((costVal + currentMarkup).toFixed(2));
+    
+    setCostsInput((prev) => ({ ...prev, [field]: costVal }));
+    setPricesInput((prev) => ({ ...prev, [field]: newPrice }));
+  };
+
+  const handleMarkupChange = (field: keyof Prices, markupVal: number) => {
+    const currentCost = costsInput[field] ?? 0;
+    const newPrice = Number((currentCost + markupVal).toFixed(2));
+    setPricesInput((prev) => ({ ...prev, [field]: newPrice }));
   };
 
   const handlePriceChange = (field: keyof Prices, val: number) => {
@@ -28,6 +381,300 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
 
   const handleWeightChange = (field: keyof Weights, val: number) => {
     setWeightsInput((prev) => ({ ...prev, [field]: val }));
+  };
+
+  // Bulk profit markup tool
+  const handleApplyBulkMarkup = (category: string, mode: "fixed" | "percent", value: number) => {
+    const isCategoryMatch = (key: keyof Prices): boolean => {
+      if (key === "vatPercent") return false;
+      if (category === "all") return true;
+      if (category === "slabs") return key === "normalBoardPrice" || key === "mocBoardPrice" || key === "hcPriceSqm";
+      if (category === "ipiles") return key.startsWith("i");
+      if (category === "spiles") return key.startsWith("s");
+      if (category === "fences") return key === "hexPilePrice" || key === "fence3Price" || key === "fence4Price";
+      if (category === "pipes") return key.startsWith("pipe");
+      if (category === "basins") return key.startsWith("basin");
+      return false;
+    };
+
+    setPricesInput((prevPrices) => {
+      const nextPrices = { ...prevPrices };
+      (Object.keys(costsInput) as Array<keyof Prices>).forEach((field) => {
+        if (field === "vatPercent") return;
+        if (isCategoryMatch(field)) {
+          const cost = costsInput[field] || 0;
+          let added = 0;
+          if (mode === "fixed") {
+            added = value;
+          } else {
+            added = Number(((cost * value) / 100).toFixed(2));
+          }
+          nextPrices[field] = Number((cost + added).toFixed(2));
+        }
+      });
+      return nextPrices;
+    });
+
+    showNotify(`ปรับอัตราบวกกำไรของหมวด "${category}" สำเร็จเรียบร้อย! 📈✨`);
+  };
+
+  // Switch which supplier is active application-wide
+  const handleSetActiveSupplier = async (targetId: string) => {
+    const target = currentSuppliers.find((s) => s.id === targetId);
+    if (!target) return;
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      activeSupplierId: targetId,
+      prices: target.prices,
+      costs: target.costs,
+      weights: target.weights,
+      suppliers: currentSuppliers,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+      showNotify(`สลับใช้งานราคา ต้นทุน และพิกัดน้ำหนักของ "${target.name}" เรียบร้อยแล้ว! 🏢✨`);
+    } catch (e) {
+      showNotify(`สลับใช้งานราคาของ "${target.name}" ในเครื่องนี้เรียบร้อย`);
+    }
+  };
+
+  // Add new supplier
+  const handleCreateSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupName.trim()) {
+      alert("กรุณากรอกชื่อซัพพลายเออร์ / โรงงาน");
+      return;
+    }
+
+    // Determine initial rates
+    let basePrices = { ...defaultPrices };
+    let baseCosts = { ...defaultCosts };
+    let baseWeights = { ...defaultWeights };
+    let baseLocation: SupplierLocation = {
+      address: "ต.ท่าทราย อ.เมือง จ.สมุทรสาคร",
+      lat: 13.5475,
+      lng: 100.2745,
+      mapsUrl: "https://maps.google.com/?q=13.5475,100.2745",
+      placeName: newSupName.trim(),
+    };
+    let baseDelivery: DeliveryConfig = {
+      freeRadiusKm: 30,
+      ratePerKm: 25,
+      basePrice: 0,
+      minOrderFreeAmount: 0,
+    };
+
+    const baseSup = currentSuppliers.find((s) => s.id === newSupBaseTemplate);
+    if (baseSup) {
+      basePrices = { ...defaultPrices, ...(baseSup.prices || {}) };
+      baseCosts = { ...defaultCosts, ...(baseSup.costs || {}) };
+      baseWeights = { ...defaultWeights, ...(baseSup.weights || {}) };
+      if (baseSup.supplierLocation) baseLocation = { ...baseSup.supplierLocation };
+      if (baseSup.deliveryConfig) baseDelivery = { ...baseSup.deliveryConfig };
+    }
+
+    const newId = "sup_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6);
+    const newProfile: SupplierProfile = {
+      id: newId,
+      name: newSupName.trim(),
+      code: newSupCode.trim() || `SP-${currentSuppliers.length + 1}`,
+      description: newSupDesc.trim() || "ซัพพลายเออร์กำหนดเอง",
+      isDefault: false,
+      supplierLocation: baseLocation,
+      deliveryConfig: baseDelivery,
+      prices: basePrices,
+      costs: baseCosts,
+      weights: baseWeights,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newSuppliersList = [...currentSuppliers, newProfile];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: newSuppliersList,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    setSelectedSupplierId(newId);
+    setIsAddModalOpen(false);
+    setNewSupName("");
+    setNewSupCode("");
+    setNewSupDesc("");
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+      showNotify(`เพิ่มซัพพลายเออร์ "${newProfile.name}" สำเร็จและซิงก์ขึ้นคลาวด์แล้ว! ➕☁️`);
+    } catch (e) {
+      showNotify(`เพิ่มซัพพลายเออร์ "${newProfile.name}" สำเร็จในอุปกรณ์นี้`);
+    }
+  };
+
+  // Clone supplier
+  const handleCloneSupplier = async (sourceId: string) => {
+    const source = currentSuppliers.find((s) => s.id === sourceId);
+    if (!source) return;
+
+    const clonedId = "sup_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6);
+    const clonedProfile: SupplierProfile = {
+      id: clonedId,
+      name: `${source.name} (สำเนา)`,
+      code: source.code ? `${source.code}-COPY` : `SP-${currentSuppliers.length + 1}`,
+      description: source.description ? `${source.description} (คัดลอกข้อมูล)` : "คัดลอกจาก " + source.name,
+      isDefault: false,
+      supplierLocation: source.supplierLocation ? { ...source.supplierLocation } : undefined,
+      deliveryConfig: source.deliveryConfig ? { ...source.deliveryConfig } : undefined,
+      prices: { ...source.prices },
+      costs: { ...defaultCosts, ...(source.costs || {}) },
+      weights: { ...source.weights },
+      createdAt: new Date().toISOString(),
+    };
+
+    const newSuppliersList = [...currentSuppliers, clonedProfile];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: newSuppliersList,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    setSelectedSupplierId(clonedId);
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+      showNotify(`คัดลอกซัพพลายเออร์เป็น "${clonedProfile.name}" สำเร็จ! 📋✨`);
+    } catch (e) {
+      showNotify(`คัดลอก "${clonedProfile.name}" สำเร็จ`);
+    }
+  };
+
+  // Delete supplier
+  const handleDeleteSupplier = async (targetId: string) => {
+    if (currentSuppliers.length <= 1) {
+      alert("ไม่สามารถลบซัพพลายเออร์ทั้งหมดได้ ต้องมีอย่างน้อย 1 รายการในระบบ");
+      return;
+    }
+
+    const target = currentSuppliers.find((s) => s.id === targetId);
+    if (!target) return;
+
+    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบซัพพลายเออร์ "${target.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`)) {
+      return;
+    }
+
+    const newSuppliersList = currentSuppliers.filter((s) => s.id !== targetId);
+    let nextActiveId = settings.activeSupplierId;
+    if (nextActiveId === targetId) {
+      nextActiveId = newSuppliersList[0].id;
+    }
+
+    const activeSupplierObj = newSuppliersList.find((s) => s.id === nextActiveId) || newSuppliersList[0];
+
+    const updatedSettings: AppSettings = {
+      activeSupplierId: nextActiveId,
+      suppliers: newSuppliersList,
+      prices: activeSupplierObj.prices,
+      costs: activeSupplierObj.costs,
+      weights: activeSupplierObj.weights,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    setSelectedSupplierId(nextActiveId);
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+      showNotify(`ลบซัพพลายเออร์ "${target.name}" เรียบร้อยแล้ว 🗑️`);
+    } catch (e) {
+      showNotify(`ลบซัพพลายเออร์ในอุปกรณ์นี้เรียบร้อย`);
+    }
+  };
+
+  // Save current changes to the selected supplier
+  const handleSaveCurrentSupplier = async (andActivate = false) => {
+    const updatedLocation: SupplierLocation = {
+      address: supplierAddress.trim() || "ต.ท่าทราย อ.เมือง จ.สมุทรสาคร",
+      mapsUrl: supplierMapsUrl.trim(),
+      lat: supplierLat,
+      lng: supplierLng,
+      placeName: supplierName.trim(),
+    };
+
+    const updatedDeliveryConfig: DeliveryConfig = {
+      freeRadiusKm: Number(freeRadiusKm) || 0,
+      ratePerKm: Number(ratePerKm) || 0,
+      basePrice: Number(basePrice) || 0,
+      minOrderFreeAmount: Number(minOrderFreeAmount) || 0,
+    };
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          name: supplierName.trim() || s.name,
+          code: supplierCode.trim() || s.code,
+          description: supplierDesc.trim(),
+          location: supplierAddress.trim(),
+          supplierLocation: updatedLocation,
+          deliveryConfig: updatedDeliveryConfig,
+          prices: pricesInput,
+          costs: costsInput,
+          weights: weightsInput,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeId = andActivate ? selectedSupplierId : settings.activeSupplierId;
+    const activeObj = updatedSuppliersList.find((s) => s.id === activeId) || updatedSuppliersList[0];
+
+    const updatedSettings: AppSettings = {
+      activeSupplierId: activeId,
+      suppliers: updatedSuppliersList,
+      prices: activeObj.prices,
+      costs: activeObj.costs,
+      weights: activeObj.weights,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+      if (response.ok) {
+        showNotify(`บันทึกข้อมูล พิกัดที่ตั้ง ต้นทุน และราคาขายของ "${supplierName}" สำเร็จแล้ว! 💾📍☁️`);
+      } else {
+        showNotify("บันทึกการตั้งค่าในเบราว์เซอร์แล้ว แต่เซิร์ฟเวอร์ยังไม่อัปเกรด ⚠️");
+      }
+    } catch (e) {
+      showNotify("บันทึกการตั้งค่าในเบราว์เซอร์แล้ว 💾");
+    }
   };
 
   const handleDownloadSingleHTML = () => {
@@ -41,56 +688,46 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     document.body.removeChild(link);
   };
 
-  const saveToLocal = async () => {
-    const updated: AppSettings = {
-      prices: pricesInput,
-      weights: weightsInput,
-    };
-    setSettings(updated);
-    localStorage.setItem("pongsakulSettings", JSON.stringify(updated));
-    
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updated),
-      });
-      if (response.ok) {
-        showNotify("อัปเดตระบบเรียลไทม์บันทึกลงเซิร์ฟเวอร์เรียบร้อยแล้ว! 💾☁️");
-      } else {
-        showNotify("บันทึกการตั้งค่าในเบราว์เซอร์แล้ว แต่เซิร์ฟเวอร์ยังไม่อัปเกรด ⚠️");
-      }
-    } catch (e) {
-      console.error(e);
-      showNotify("บันทึกการตั้งค่าในเบราว์เซอร์แล้ว (ไม่สามารถอัปโหลดไปยังเซิร์ฟเวอร์ร่วมได้) ⚠️");
-    }
-  };
-
   const resetToDefaultOriginal = async () => {
-    if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการคืนค่าระบบเป็นราคาแนะนำตามมาตรฐานโรงงาน (${APP_VERSION})?`)) {
-      setPricesInput({ ...defaultSettings.prices });
-      setWeightsInput({ ...defaultSettings.weights });
-      setSettings({ ...defaultSettings });
-      localStorage.setItem("pongsakulSettings", JSON.stringify(defaultSettings));
-      
-      try {
-        const response = await fetch("/api/settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(defaultSettings),
-        });
-        if (response.ok) {
-          showNotify("รีเซ็ตราคากลางโรงงานและประสานงานไปยังทุกเครื่องเรียบร้อย! 🔄☁️");
-        } else {
-          showNotify("รีเซ็ตเฉพาะในเบราว์เซอร์ของคุณเรียบร้อยแล้ว 🔄");
+    if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการคืนค่าราคา ต้นทุน และน้ำหนักของ "${supplierName}" เป็นราคามาตรฐานโรงงาน?`)) {
+      setPricesInput({ ...defaultPrices });
+      setCostsInput({ ...defaultCosts });
+      setWeightsInput({ ...defaultWeights });
+
+      const updatedSuppliersList = currentSuppliers.map((s) => {
+        if (s.id === selectedSupplierId) {
+          return {
+            ...s,
+            prices: { ...defaultPrices },
+            costs: { ...defaultCosts },
+            weights: { ...defaultWeights },
+          };
         }
+        return s;
+      });
+
+      const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+
+      const updatedSettings: AppSettings = {
+        activeSupplierId: settings.activeSupplierId,
+        suppliers: updatedSuppliersList,
+        prices: activeObj.prices,
+        costs: activeObj.costs,
+        weights: activeObj.weights,
+      };
+
+      setSettings(updatedSettings);
+      localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+      try {
+        await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatedSettings),
+        });
+        showNotify(`รีเซ็ตราคา ต้นทุน และน้ำหนักของ "${supplierName}" เป็นมาตรฐานเรียบร้อย! 🔄`);
       } catch (e) {
-        console.error(e);
-        showNotify("รีเซ็ตเฉพาะในเบราว์เซอร์ของคุณเรียบร้อยแล้ว 🔄");
+        showNotify("รีเซ็ตเฉพาะในเบราว์เซอร์เรียบร้อย 🔄");
       }
     }
   };
@@ -98,9 +735,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
   const handleExportJpg = async () => {
     if (!reportRef.current) return;
     setIsExporting(true);
-    showNotify("กำลังสร้างรูปภาพแค็ตตาล็อกราคา... กรุณารอสักครู่ 📸");
+    showNotify(`กำลังสร้างรูปภาพแค็ตตาล็อกราคาของ ${supplierName}... กรุณารอสักครู่ 📸`);
 
-    // Force style updates or give some delay for DOM layout
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     try {
@@ -114,15 +750,16 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       const imageURL = canvas.toDataURL("image/jpeg", 0.9);
       const a = document.createElement("a");
       a.href = imageURL;
-      a.download = `POGSAKUL_Price_Catalog_${new Date().toISOString().slice(0, 10)}.jpg`;
+      const cleanName = supplierName.replace(/[^a-zA-Z0-9ก-๙_-]/g, "_");
+      a.download = `Catalog_${cleanName}_${new Date().toISOString().slice(0, 10)}.jpg`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
 
-      showNotify("สร้างไฟล์ JPG สรุปราคาสำเร็จและสแตนด์บายดาวน์โหลดแล้ว! 🎉");
+      showNotify(`สร้างไฟล์ JPG สรุปราคาของ ${supplierName} สำเร็จแล้ว! 🎉`);
     } catch (e) {
       console.error(e);
-      alert("ไม่สามารถเรนเดอร์ภาพแค็ตตาล็อกได้เนื่องกัับข้อจำกัดเฟรมเวิร์ก");
+      alert("ไม่สามารถเรนเดอร์ภาพแค็ตตาล็อกได้เนื่องจากข้อจำกัดเฟรมเวิร์ก");
     } finally {
       setIsExporting(false);
     }
@@ -130,918 +767,798 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
 
   return (
     <div className="space-y-6">
-      {/* Dynamic Pop notification banner */}
+      {/* Notification Toast */}
       {notif && (
-        <div className="fixed top-20 right-4 left-4 sm:left-auto sm:right-6 z-50 bg-[#c62828] text-white py-3 px-5 rounded-xl shadow-2xl flex items-center gap-2 border border-red-500/30 font-medium">
+        <div className="fixed top-20 right-4 left-4 sm:left-auto sm:right-6 z-50 bg-[#C62828] text-white py-3 px-5 rounded-xl shadow-2xl flex items-center gap-2 border border-red-500/30 font-medium">
           <CheckCircle2 size={18} className="text-amber-300 flex-shrink-0 animate-bounce" />
           <span className="text-xs sm:text-sm font-sans">{notif}</span>
         </div>
       )}
 
-      {/* Corporate Quotation Export & Utility Bar */}
-      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* 1. SUPPLIERS MANAGER PANEL */}
+      <div className="bg-white rounded-3xl p-6 md:p-8 border border-neutral-200/80 shadow-md space-y-6">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 border-b border-neutral-100">
           <div>
-            <h3 className="font-bold text-neutral-800 text-lg flex items-center gap-1.5">
-              <Settings className="text-[#C62828]" size={20} />
-              แผงควบคุมหลัก & ออกรายงานเอกสาร
-            </h3>
-            <p className="text-neutral-500 text-xs sm:text-sm leading-relaxed mt-1">
-              แก้ไขราคากลาง, สเปคค่าน้ำหนักจริง และสรุปอัตราราคาส่งมอบเพื่อดาวน์โหลดเป็นภาพใบเสนอราคา (JPG catalog) ได้ในคลิกเดียว
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-red-50 text-[#C62828] rounded-xl">
+                <Factory size={22} />
+              </div>
+              <h3 className="font-extrabold text-neutral-800 text-xl font-display">
+                ระบบจัดการซัพพลายเออร์ & แยกการตั้งค่าราคา/น้ำหนัก
+              </h3>
+            </div>
+            <p className="text-neutral-500 text-xs sm:text-sm mt-1.5">
+              กำหนดราคาและค่าน้ำหนักแยกตามแต่ละซัพพลายเออร์หรือโรงงานผู้ผลิต เพื่อให้ทุกหน้ารายการคำนวณสามารถเลือกซัพที่ต้องการได้ทันที
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2.5 w-full md:w-auto">
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-2 bg-[#C62828] hover:bg-[#B71C1C] text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-xl shadow-md transition shrink-0"
+          >
+            <Plus size={16} />
+            <span>เพิ่มซัพพลายเออร์ใหม่</span>
+          </button>
+        </div>
+
+        {/* Suppliers List Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {currentSuppliers.map((sup) => {
+            const isSelectedForEditing = sup.id === selectedSupplierId;
+            const isActiveForCalc = sup.id === settings.activeSupplierId;
+
+            return (
+              <div
+                key={sup.id}
+                onClick={() => setSelectedSupplierId(sup.id)}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer relative flex flex-col justify-between ${
+                  isSelectedForEditing
+                    ? "bg-red-50/40 border-[#C62828] shadow-md ring-2 ring-red-500/20"
+                    : "bg-white hover:bg-neutral-50/80 border-neutral-200/70"
+                }`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-extrabold text-neutral-800 text-sm">{sup.name}</span>
+                      {sup.code && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-neutral-100 text-neutral-600 rounded">
+                          {sup.code}
+                        </span>
+                      )}
+                    </div>
+
+                    {isActiveForCalc && (
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
+                        <Check size={10} /> ใช้งานหลัก
+                      </span>
+                    )}
+                  </div>
+
+                  {sup.description && (
+                    <p className="text-xs text-neutral-500 mt-1.5 line-clamp-2">
+                      {sup.description}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2 mt-3 text-[11px] text-neutral-600 bg-neutral-100/60 p-2 rounded-lg">
+                    <span>แผ่นพื้น: ฿{sup.prices?.normalBoardPrice || 210}/฿{sup.prices?.mocBoardPrice || 230}</span>
+                    <span>•</span>
+                    <span>นน.แผ่น: {sup.weights?.slab || 42} กก.</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-1.5 mt-4 pt-3 border-t border-neutral-100/80">
+                  <div className="flex items-center gap-1">
+                    {!isActiveForCalc && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetActiveSupplier(sup.id);
+                        }}
+                        className="text-[11px] font-bold text-neutral-700 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-2.5 py-1 rounded-lg border border-neutral-200 transition"
+                        title="ตั้งเป็นซัพพลายเออร์ที่เลือกใช้ในการคำนวณทุกหน้า"
+                      >
+                        เลือกใช้คำนวณ
+                      </button>
+                    )}
+                    {isSelectedForEditing && (
+                      <span className="text-[11px] font-bold text-[#C62828] bg-red-100/60 px-2 py-1 rounded-lg">
+                        กำลังแก้ไขข้อมูลนี้
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloneSupplier(sup.id);
+                      }}
+                      className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition"
+                      title="คัดลอกเป็นซัพพลายเออร์ใหม่"
+                    >
+                      <Copy size={14} />
+                    </button>
+                    {currentSuppliers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSupplier(sup.id);
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="ลบซัพพลายเออร์นี้"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. ACTIVE SUPPLIER EDITING BANNER & DETAILS */}
+      <div className="bg-white rounded-3xl p-6 md:p-8 border border-neutral-200/80 shadow-md space-y-6">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#C62828] uppercase tracking-wider bg-red-50 px-2.5 py-1 rounded-full border border-red-100">
+                กำลังปรับแต่งราคาและน้ำหนักของ:
+              </span>
+              {selectedSupplierId === settings.activeSupplierId && (
+                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Check size={12} /> เป็นซัพพลายเออร์ที่เลือกใช้งานอยู่ในปัจจุบัน
+                </span>
+              )}
+            </div>
+            <h3 className="font-extrabold text-neutral-900 text-2xl mt-1">
+              {supplierName}
+            </h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            {selectedSupplierId !== settings.activeSupplierId && (
+              <button
+                type="button"
+                onClick={() => handleSetActiveSupplier(selectedSupplierId)}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition"
+              >
+                <Check size={15} />
+                <span>ตั้งเป็นซัพพลายเออร์ที่ใช้งาน</span>
+              </button>
+            )}
+
             <button
               onClick={handleExportJpg}
               disabled={isExporting}
-              className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-blue-650 hover:bg-blue-700 hover:scale-101 active:scale-99 transition text-white text-xs sm:text-sm font-semibold px-4 py-2.5 rounded-xl border border-blue-700 bg-blue-600 shadow-sm"
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition"
             >
-              <Image size={16} />
-              {isExporting ? "กำลังบันทึกภาพ..." : "สร้างรายงานราคา (JPG)"}
+              <Image size={15} />
+              <span>{isExporting ? "กำลังบันทึกภาพ..." : "สร้างรายงานราคา (JPG)"}</span>
             </button>
+
             <button
               onClick={resetToDefaultOriginal}
-              className="flex items-center justify-center gap-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 active:scale-99 transition text-xs sm:text-sm font-bold px-3 py-2.5 rounded-xl border border-neutral-200"
+              className="flex items-center gap-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs sm:text-sm font-bold px-3 py-2.5 rounded-xl border border-neutral-200 transition"
             >
-              <RotateCcw size={15} />
-              คืนค่าแนะนำ
+              <RotateCcw size={14} />
+              <span>คืนค่าแนะนำ</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Grid forms settings layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        
-        {/* Prices Section */}
-        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-neutral-100">
-            <div className="p-1.5 bg-red-50 text-[#C62828] rounded-lg">
-              <DollarSign size={16} />
-            </div>
-            <h4 className="font-semibold text-neutral-800 text-base">ราคาตั้งต้นวัสดุคอนกรีตอัดแรง (บาท)</h4>
+        {/* Profile Basic Info Inputs */}
+        <div className="bg-neutral-50/70 p-4 sm:p-5 rounded-2xl border border-neutral-200/60 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs font-bold text-neutral-700 block mb-1">ชื่อซัพพลายเออร์ / โรงงาน *</label>
+            <input
+              type="text"
+              value={supplierName}
+              onChange={(e) => setSupplierName(e.target.value)}
+              placeholder="ระบุชื่อซัพพลายเออร์"
+              className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-sm font-semibold text-neutral-800 focus:ring-2 focus:ring-red-500/20 focus:border-[#C62828] outline-none"
+            />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* VAT config */}
-            <div className="bg-amber-50/40 p-3 rounded-xl border border-amber-100/50 sm:col-span-2 flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                <Percent size={14} /> อัตราภาษีมูลค่าเพิ่มทั่วไป (%)
-              </label>
-              <input
-                type="number"
-                value={pricesInput.vatPercent}
-                onChange={(e) => handlePriceChange("vatPercent", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-bold font-mono focus:ring-1 focus:ring-red-300 outline-none"
-              />
-            </div>
+          <div>
+            <label className="text-xs font-bold text-neutral-700 block mb-1">รหัสย่อ (Code)</label>
+            <input
+              type="text"
+              value={supplierCode}
+              onChange={(e) => setSupplierCode(e.target.value)}
+              placeholder="เช่น SP-01, PS-RAYONG"
+              className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-sm font-mono text-neutral-800 focus:ring-2 focus:ring-red-500/20 focus:border-[#C62828] outline-none"
+            />
+          </div>
 
-            {/* Board Core Prices */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">กลุ่มเกรดราคาแผ่นพื้น (บาท / ตร.ม.)</span>
-            </div>
-            
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">แผ่นพื้นธรรมดา (ฐานลวด 4)</label>
-              <input
-                type="number"
-                value={pricesInput.normalBoardPrice}
-                onChange={(e) => handlePriceChange("normalBoardPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">แผ่นพื้น มอก. (TIS)</label>
-              <input
-                type="number"
-                value={pricesInput.mocBoardPrice}
-                onChange={(e) => handlePriceChange("mocBoardPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">แผ่นพื้นกลวง (Hollow Core)</label>
-              <input
-                type="number"
-                value={pricesInput.hcPriceSqm}
-                onChange={(e) => handlePriceChange("hcPriceSqm", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            {/* Pile Prices Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5 pt-3">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">กลุ่มเสาเข็ม I-Shape ขนาดหน้าเสา (บาท / เมตร)</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มไอ I-15Price</label>
-              <input
-                type="number"
-                value={pricesInput.i15Price}
-                onChange={(e) => handlePriceChange("i15Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-red-50/20 p-2.5 rounded-lg border border-red-500/5">
-              <label className="text-xs font-semibold text-neutral-600">I-18 ธรรมดา (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i18NoTISPrice}
-                onChange={(e) => handlePriceChange("i18NoTISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-red-50/20 p-2.5 rounded-lg border border-red-500/5">
-              <label className="text-xs font-semibold text-[#8B0000]">I-18 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i18TISPrice}
-                onChange={(e) => handlePriceChange("i18TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-bold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-red-50/20 p-2.5 rounded-lg border border-red-500/5">
-              <label className="text-xs font-semibold text-neutral-600 font-medium">I-18 ธรรมดา (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i18JointPrice}
-                onChange={(e) => handlePriceChange("i18JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-red-50/20 p-2.5 rounded-lg border border-red-500/5">
-              <label className="text-xs font-semibold text-[#8B0000] font-medium">I-18 มอก. (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i18TISJointPrice}
-                onChange={(e) => handlePriceChange("i18TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-bold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
-
-            <div className="flex flex-col gap-1 bg-[#1976D2]/5 p-2.5 rounded-lg border border-blue-500/5">
-              <label className="text-xs font-semibold text-neutral-600">I-22 ธรรมดา (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i22NoTISPrice}
-                onChange={(e) => handlePriceChange("i22NoTISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-[#1976D2]/5 p-2.5 rounded-lg border border-blue-500/5">
-              <label className="text-xs font-semibold text-blue-800">I-22 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i22TISPrice}
-                onChange={(e) => handlePriceChange("i22TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-bold font-mono text-blue-800"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-[#1976D2]/5 p-2.5 rounded-lg border border-blue-500/5">
-              <label className="text-xs font-semibold text-neutral-600">I-22 ธรรมดา (ท่อนต่อ joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i22JointPrice}
-                onChange={(e) => handlePriceChange("i22JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1 bg-[#1976D2]/5 p-2.5 rounded-lg border border-blue-500/5">
-              <label className="text-xs font-semibold text-blue-800">I-22 มอก. (ท่อนต่อ joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i22TISJointPrice}
-                onChange={(e) => handlePriceChange("i22TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-white border border-neutral-200 py-1 px-2.5 rounded text-sm font-bold font-mono text-blue-800"
-              />
-            </div>
-
-            {/* Higher dimensions I-shapers prices */}
-            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-26 ธรรมดา (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i26NoTISPrice}
-                onChange={(e) => handlePriceChange("i26NoTISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-26 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i26TISPrice}
-                onChange={(e) => handlePriceChange("i26TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-26 ธรรมดา (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i26NoTISJointPrice}
-                onChange={(e) => handlePriceChange("i26NoTISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-26 มอก. (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i26TISJointPrice}
-                onChange={(e) => handlePriceChange("i26TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-30 ธรรมดา (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i30NoTISPrice}
-                onChange={(e) => handlePriceChange("i30NoTISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-30 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i30TISPrice}
-                onChange={(e) => handlePriceChange("i30TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">I-30 ธรรมดา (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i30NoTISJointPrice}
-                onChange={(e) => handlePriceChange("i30NoTISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-30 มอก. (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i30TISJointPrice}
-                onChange={(e) => handlePriceChange("i30TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-35 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i35TISPrice}
-                onChange={(e) => handlePriceChange("i35TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-35 มอก. (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i35TISJointPrice}
-                onChange={(e) => handlePriceChange("i35TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-40 มอก. (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.i40TISPrice}
-                onChange={(e) => handlePriceChange("i40TISPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">I-40 มอก. (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.i40TISJointPrice}
-                onChange={(e) => handlePriceChange("i40TISJointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            {/* Fence and HEx */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5 pt-3">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">สเปคเสาเข็มหกเหลี่ยม & เสารั้ว (บาท / เมตร)</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มหกเหลี่ยมกลวง (Hex)</label>
-              <input
-                type="number"
-                value={pricesInput.hexPilePrice}
-                onChange={(e) => handlePriceChange("hexPilePrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสารั้วลวดหนามหน้า 3"</label>
-              <input
-                type="number"
-                value={pricesInput.fence3Price}
-                onChange={(e) => handlePriceChange("fence3Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสารั้วลวดหนามหน้า 4"</label>
-              <input
-                type="number"
-                value={pricesInput.fence4Price}
-                onChange={(e) => handlePriceChange("fence4Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            {/* Solid Square Pile Prices Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5 pt-3">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">กลุ่มเสาสี่เหลี่ยมตัน S-Shape (บาท / เมตร)</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-18 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s18Price}
-                onChange={(e) => handlePriceChange("s18Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-18 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s18JointPrice}
-                onChange={(e) => handlePriceChange("s18JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-22 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s22Price}
-                onChange={(e) => handlePriceChange("s22Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-22 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s22JointPrice}
-                onChange={(e) => handlePriceChange("s22JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-26 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s26Price}
-                onChange={(e) => handlePriceChange("s26Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-26 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s26JointPrice}
-                onChange={(e) => handlePriceChange("s26JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-30 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s30Price}
-                onChange={(e) => handlePriceChange("s30Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-30 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s30JointPrice}
-                onChange={(e) => handlePriceChange("s30JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-35 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s35Price}
-                onChange={(e) => handlePriceChange("s35Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-35 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s35JointPrice}
-                onChange={(e) => handlePriceChange("s35JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-40 (ท่อนเดียว)</label>
-              <input
-                type="number"
-                value={pricesInput.s40Price}
-                onChange={(e) => handlePriceChange("s40Price", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาสี่เหลี่ยมตัน S-40 (ท่อนต่อ Joint)</label>
-              <input
-                type="number"
-                value={pricesInput.s40JointPrice}
-                onChange={(e) => handlePriceChange("s40JointPrice", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            {/* Drainage Pipe Prices Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
-              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">กลุ่มท่อระบายน้ำ คสล. (บาท / ท่อน) 🌊</span>
-            </div>
-
-            {[
-              { size: "0.30", norm: "pipe030NoTISPrice", t3: "pipe030T3Price", t2: "pipe030T2Price" },
-              { size: "0.40", norm: "pipe040NoTISPrice", t3: "pipe040T3Price", t2: "pipe040T2Price" },
-              { size: "0.50", norm: "pipe050NoTISPrice", t3: "pipe050T3Price", t2: "pipe050T2Price" },
-              { size: "0.60", norm: "pipe060NoTISPrice", t3: "pipe060T3Price", t2: "pipe060T2Price" },
-              { size: "0.80", norm: "pipe080NoTISPrice", t3: "pipe080T3Price", t2: "pipe080T2Price" },
-              { size: "1.00", norm: "pipe100NoTISPrice", t3: "pipe100T3Price", t2: "pipe100T2Price" },
-              { size: "1.20", norm: "pipe120NoTISPrice", t3: "pipe120T3Price", t2: "pipe120T2Price" },
-              { size: "1.50", norm: "pipe150NoTISPrice", t3: "pipe150T3Price", t2: "pipe150T2Price" }
-            ].map((p) => (
-              <div key={p.size} className="sm:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 bg-neutral-50/60 p-3 rounded-xl border border-neutral-100">
-                <div className="flex flex-col justify-center">
-                  <span className="text-xs font-bold text-neutral-800">ท่อระบายน้ำ ขนาด Ø {p.size} ม.</span>
-                  <span className="text-[10px] text-neutral-400">ระบายน้ำ คสล.</span>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-neutral-500">ราคา ธรรมดา (คสล)</label>
-                  <input
-                    type="number"
-                    value={pricesInput[p.norm as keyof Prices]}
-                    onChange={(e) => handlePriceChange(p.norm as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-neutral-500">มอก.3</label>
-                    <input
-                      type="number"
-                      value={pricesInput[p.t3 as keyof Prices]}
-                      onChange={(e) => handlePriceChange(p.t3 as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-neutral-500">มอก.2</label>
-                    <input
-                      type="number"
-                      value={pricesInput[p.t2 as keyof Prices]}
-                      onChange={(e) => handlePriceChange(p.t2 as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Catch Basins Prices Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
-              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">กลุ่มบ่อพัก คสล.อัดแรง (บาท / บ่อพัก) 🕳️</span>
-            </div>
-
-            {[
-              { size: "0.30", field: "basin030Price" },
-              { size: "0.40", field: "basin040Price" },
-              { size: "0.50", field: "basin050Price" },
-              { size: "0.60", field: "basin060Price" },
-              { size: "0.80", field: "basin080Price" },
-              { size: "1.00", field: "basin100Price" },
-              { size: "1.20", field: "basin120Price" }
-            ].map((b) => (
-              <div key={b.size} className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-neutral-600">บ่อพัก คสล. ขนาด {b.size} ม.</label>
-                <input
-                  type="number"
-                  value={pricesInput[b.field as keyof Prices]}
-                  onChange={(e) => handlePriceChange(b.field as keyof Prices, Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-                />
-              </div>
-            ))}
+          <div>
+            <label className="text-xs font-bold text-neutral-700 block mb-1">คำอธิบาย / โน้ตเพิ่มเติม</label>
+            <input
+              type="text"
+              value={supplierDesc}
+              onChange={(e) => setSupplierDesc(e.target.value)}
+              placeholder="เช่น สำหรับงานโครงการโซนระยอง, รวมขนส่งแล้ว"
+              className="w-full bg-white border border-neutral-300 rounded-xl px-3 py-2 text-sm text-neutral-800 focus:ring-2 focus:ring-red-500/20 focus:border-[#C62828] outline-none"
+            />
           </div>
         </div>
 
-        {/* Weights Section */}
-        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-neutral-100">
-            <div className="p-1.5 bg-red-50 text-[#C62828] rounded-lg">
-              <Scale size={16} />
-            </div>
-            <h4 className="font-semibold text-neutral-800 text-base">น้ำหนักจำเพาะตามสเปคโครงสร้าง (กก. / เมตร)</h4>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* General & S-Piles */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">กลุ่มน้ำหนักแผ่นพื้น เสารั้ว และ S-Pile เจาะจง</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">แผ่นพื้นสำเร็จรูป</label>
-              <input
-                type="number"
-                value={weightsInput.slab}
-                onChange={(e) => handleWeightChange("slab", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-                step="0.1"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสารั้วลวดหนาม 3"</label>
-              <input
-                type="number"
-                value={weightsInput.fence3}
-                onChange={(e) => handleWeightChange("fence3", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-                step="0.1"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสารั้วลวดหนาม 4"</label>
-              <input
-                type="number"
-                value={weightsInput.fence4}
-                onChange={(e) => handleWeightChange("fence4", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-                step="0.1"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็ม หกเหลี่ยม</label>
-              <input
-                type="number"
-                value={weightsInput.hex}
-                onChange={(e) => handleWeightChange("hex", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-                step="0.1"
-              />
-            </div>
-
-            {/* S-Piles specifications */}
-            <div className="sm:col-span-2 border-b border-neutral-100 my-1"></div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-18 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s18}
-                onChange={(e) => handleWeightChange("s18", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-22 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s22}
-                onChange={(e) => handleWeightChange("s22", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-26 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s26}
-                onChange={(e) => handleWeightChange("s26", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-30 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s30}
-                onChange={(e) => handleWeightChange("s30", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-35 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s35}
-                onChange={(e) => handleWeightChange("s35", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มเหลี่ยม S-40 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.s40}
-                onChange={(e) => handleWeightChange("s40", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            {/* I-Shape Weights section */}
-            <div className="sm:col-span-2 border-b border-dashed border-neutral-200 py-1.5 pt-3">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wide">ค่าน้ำหนักมาตรฐานเสาเข็มตัวไอ (I-Shape)</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">ไอ I-15 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i15}
-                onChange={(e) => handleWeightChange("i15", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">ไอ I-18 ธรรมดา (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i18_no_tis}
-                onChange={(e) => handleWeightChange("i18_no_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">ไอ I-18 มอก. (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i18_tis}
-                onChange={(e) => handleWeightChange("i18_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">ไอ I-22 ธรรมดา (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i22_no_tis}
-                onChange={(e) => handleWeightChange("i22_no_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-blue-800">ไอ I-22 มอก. (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i22_tis}
-                onChange={(e) => handleWeightChange("i22_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-blue-800"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">ไอ I-26 ธรรมดา</label>
-              <input
-                type="number"
-                value={weightsInput.i26_no_tis}
-                onChange={(e) => handleWeightChange("i26_no_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">ไอ I-26 มอก.</label>
-              <input
-                type="number"
-                value={weightsInput.i26_tis}
-                onChange={(e) => handleWeightChange("i26_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">ไอ I-30 ธรรมดา</label>
-              <input
-                type="number"
-                value={weightsInput.i30_no_tis}
-                onChange={(e) => handleWeightChange("i30_no_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-[#8B0000]">ไอ I-30 มอก.</label>
-              <input
-                type="number"
-                value={weightsInput.i30_tis}
-                onChange={(e) => handleWeightChange("i30_tis", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono text-[#8B0000]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มไอ I-35 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i35}
-                onChange={(e) => handleWeightChange("i35", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-neutral-600">เสาเข็มไอ I-40 (กก./ม.)</label>
-              <input
-                type="number"
-                value={weightsInput.i40}
-                onChange={(e) => handleWeightChange("i40", Math.max(0, parseFloat(e.target.value) || 0))}
-                className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
-              />
-            </div>
-
-            {/* Drainage Pipe Weights Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
-              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">ค่าน้ำหนักท่อระบายน้ำ คสล. (กก. / ท่อน) 🌊</span>
-            </div>
-
-            {[
-              { size: "0.30", norm: "pipe030Weight", t3: "pipe030T3Weight", t2: "pipe030T2Weight" },
-              { size: "0.40", norm: "pipe040Weight", t3: "pipe040T3Weight", t2: "pipe040T2Weight" },
-              { size: "0.50", norm: "pipe050Weight", t3: "pipe050T3Weight", t2: "pipe050T2Weight" },
-              { size: "0.60", norm: "pipe060Weight", t3: "pipe060T3Weight", t2: "pipe060T2Weight" },
-              { size: "0.80", norm: "pipe080Weight", t3: "pipe080T3Weight", t2: "pipe080T2Weight" },
-              { size: "1.00", norm: "pipe100Weight", t3: "pipe100T3Weight", t2: "pipe100T2Weight" },
-              { size: "1.20", norm: "pipe120Weight", t3: "pipe120T3Weight", t2: "pipe120T2Weight" },
-              { size: "1.50", norm: "pipe150Weight", t3: "pipe150T3Weight", t2: "pipe150T2Weight" }
-            ].map((w) => (
-              <div key={w.size} className="sm:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 bg-neutral-50/60 p-3 rounded-xl border border-neutral-100">
-                <div className="flex flex-col justify-center">
-                  <span className="text-xs font-bold text-neutral-800">น้ำหนักท่อขนาด Ø {w.size} ม.</span>
-                  <span className="text-[10px] text-neutral-400">น้ำหนัก คสล. (ก.ก.)</span>
+        {/* 2.5 LOCATION & GOOGLE MAPS & FREE DELIVERY CONFIGURATION */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 bg-gradient-to-br from-neutral-50 to-neutral-100/60 p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+          {/* Location & GPS Panel */}
+          <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/80 shadow-2xs space-y-3.5">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-red-50 text-[#C62828] rounded-lg">
+                  <MapPin size={16} />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-neutral-500">น้ำหนัก คสล. ปกติ</label>
-                  <input
-                    type="number"
-                    value={weightsInput[w.norm as keyof Weights]}
-                    onChange={(e) => handleWeightChange(w.norm as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-neutral-500">มอก.3</label>
-                    <input
-                      type="number"
-                      value={weightsInput[w.t3 as keyof Weights]}
-                      onChange={(e) => handleWeightChange(w.t3 as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-neutral-500">มอก.2</label>
-                    <input
-                      type="number"
-                      value={weightsInput[w.t2 as keyof Weights]}
-                      onChange={(e) => handleWeightChange(w.t2 as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="bg-white border border-neutral-250 py-1 px-2.5 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
-                </div>
+                <h4 className="font-extrabold text-neutral-800 text-sm">
+                  📍 ที่ตั้งโรงงาน & พิกัด Google Maps
+                </h4>
               </div>
-            ))}
 
-            {/* Catch Basins Weights Group */}
-            <div className="sm:col-span-2 border-b border-dashed border-[#C62828]/20 py-1.5 pt-4">
-              <span className="text-xs font-black text-[#C62828] uppercase tracking-wide">ค่าน้ำหนักบ่อพัก คสล.อัดแรง (กก. / บ่อพัก) 🕳️</span>
+              {isValidLatLng(supplierLat, supplierLng) && (
+                <a
+                  href={createGoogleMapsDirectionsUrl(supplierLat!, supplierLng!, 13.6265, 100.3956)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg border border-red-200 transition"
+                  title="เปิดดูตำแหน่งบน Google Maps"
+                >
+                  <Compass size={13} />
+                  <span>เปิดดูใน Maps ↗</span>
+                </a>
+              )}
             </div>
 
-            {[
-              { size: "0.30", field: "basin030Weight" },
-              { size: "0.40", field: "basin040Weight" },
-              { size: "0.50", field: "basin050Weight" },
-              { size: "0.60", field: "basin060Weight" },
-              { size: "0.80", field: "basin080Weight" },
-              { size: "1.00", field: "basin100Weight" },
-              { size: "1.20", field: "basin120Weight" }
-            ].map((wb) => (
-              <div key={wb.size} className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-neutral-600">บ่อพัก คสล. ขนาด {wb.size} ม.</label>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-neutral-700 block mb-1">
+                  ที่อยู่โรงงาน / ซัพพลายเออร์ (Address)
+                </label>
                 <input
-                  type="number"
-                  value={weightsInput[wb.field as keyof Weights]}
-                  onChange={(e) => handleWeightChange(wb.field as keyof Weights, Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="bg-neutral-50 border border-neutral-200 py-1.5 px-3 rounded-lg text-sm font-semibold font-mono"
+                  type="text"
+                  value={supplierAddress}
+                  onChange={(e) => handleInstantLocationUpdate(e.target.value, supplierLat, supplierLng, supplierMapsUrl)}
+                  placeholder="เช่น 125 หมู่ 4 ต.ท่าทราย อ.เมือง จ.สมุทรสาคร"
+                  className="w-full bg-neutral-50/60 border border-neutral-300 rounded-xl px-3 py-2 text-xs font-medium text-neutral-800 focus:bg-white focus:ring-1 focus:ring-red-400 outline-none"
                 />
               </div>
-            ))}
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-neutral-700 block">
+                    ลิงก์ Google Maps หรือ พิกัด (Lat, Lng)
+                  </label>
+                  <span className="text-[10px] text-neutral-500 font-mono">
+                    รองรับ URL และ ละติจูด,ลองจิจูด (อัปเดตทันที)
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={supplierMapsUrl}
+                  onChange={(e) => handleParseSupplierLocation(e.target.value)}
+                  placeholder="วางลิงก์ เช่น https://maps.app.goo.gl/... หรือ 13.5475, 100.2745"
+                  className="w-full bg-neutral-50/60 border border-neutral-300 rounded-xl px-3 py-2 text-xs font-mono text-neutral-800 focus:bg-white focus:ring-1 focus:ring-red-400 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="text-[11px] font-bold text-neutral-600 block mb-0.5">ละติจูด (Latitude)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={supplierLat ?? ""}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      const nextLat = isNaN(val) ? undefined : val;
+                      handleInstantLocationUpdate(supplierAddress, nextLat, supplierLng, supplierMapsUrl);
+                    }}
+                    placeholder="13.5475"
+                    className="w-full bg-neutral-50/60 border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-neutral-800 focus:bg-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-neutral-600 block mb-0.5">ลองจิจูด (Longitude)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={supplierLng ?? ""}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      const nextLng = isNaN(val) ? undefined : val;
+                      handleInstantLocationUpdate(supplierAddress, supplierLat, nextLng, supplierMapsUrl);
+                    }}
+                    placeholder="100.2745"
+                    className="w-full bg-neutral-50/60 border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-neutral-800 focus:bg-white outline-none"
+                  />
+                </div>
+              </div>
+
+              {locationNotice ? (
+                <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 p-2 rounded-lg border border-emerald-200 animate-pulse flex items-center justify-between">
+                  <span>{locationNotice}</span>
+                  <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded">บันทึกทันที</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>⚡ อัปเดตพิกัดทันทีเมื่อมีการเปลี่ยนแปลง (ไม่ต้องรอกดบันทึก)</span>
+                </div>
+              )}
+
+              {/* Quick Preset Location Selector for Thailand */}
+              <div>
+                <span className="text-[11px] font-bold text-neutral-500 block mb-1.5">
+                  📌 เลือกศูนย์กระจายสินค้า/โซนโรงงานยอดนิยม (อัปเดตทันที):
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_LOCATIONS.slice(0, 6).map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        handleInstantLocationUpdate(
+                          preset.address,
+                          preset.lat,
+                          preset.lng,
+                          `https://maps.google.com/?q=${preset.lat},${preset.lng}`,
+                          `⚡ เลือกพิกัด "${preset.name}" อัปเดตทันทีเรียบร้อยแล้ว`
+                        );
+                      }}
+                      className="text-[10px] font-semibold bg-neutral-100 hover:bg-red-50 hover:text-red-700 hover:border-red-200 text-neutral-700 px-2 py-1 rounded-md border border-neutral-200 transition"
+                    >
+                      {preset.name.split(" ")[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* Delivery Policy Panel - Dynamic Editable Distance Tiers */}
+          <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/80 shadow-2xs space-y-4 flex flex-col justify-between">
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-lg">
+                    <Truck size={16} />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-neutral-800 text-sm">
+                      🚚 นโยบายคิดค่าขนส่งตามช่วงระยะทาง (Distance Tiers)
+                    </h4>
+                    <p className="text-[11px] text-neutral-500">
+                      กำหนดราคาตามระยะทางจริง เช่น 31-60 กม. คิด 3,000 บาท
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    ⚡ ซิงก์ทันที
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleResetTiers}
+                    className="text-[10px] font-semibold text-neutral-600 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 px-2 py-1 rounded-md transition"
+                    title="รีเซ็ตเป็นช่วงมาตรฐาน"
+                  >
+                    🔄 รีเซ็ตช่วง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddTier}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 px-2.5 py-1 rounded-lg shadow-xs transition"
+                  >
+                    <Plus size={13} />
+                    <span>+ เพิ่มช่วงระยะทาง</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tiers List */}
+              <div className="space-y-2 mt-3 max-h-[290px] overflow-y-auto pr-1">
+                {distanceTiers.map((tier, idx) => {
+                  const isFree = Number(tier.price) === 0;
+                  return (
+                    <div
+                      key={tier.id || idx}
+                      className="bg-neutral-50/80 hover:bg-neutral-50 border border-neutral-200/90 rounded-xl p-2.5 transition flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5"
+                    >
+                      {/* Tier Label */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-neutral-200/70 text-neutral-800">
+                          ช่วงที่ {idx + 1}
+                        </span>
+                      </div>
+
+                      {/* Distance Inputs: min to max */}
+                      <div className="flex items-center gap-1.5 flex-1 min-w-[170px]">
+                        <span className="text-[11px] text-neutral-500 font-semibold shrink-0">ระยะ:</span>
+                        <div className="flex items-center gap-1 w-full">
+                          <input
+                            type="number"
+                            min="0"
+                            value={tier.minKm}
+                            onChange={(e) =>
+                              handleUpdateTier(idx, "minKm", parseFloat(e.target.value) || 0)
+                            }
+                            className="w-16 sm:w-20 bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs font-mono font-bold text-neutral-800 text-center focus:ring-1 focus:ring-emerald-400 outline-none"
+                            placeholder="0"
+                          />
+                          <span className="text-[11px] font-bold text-neutral-400">ถึง</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={tier.maxKm}
+                            onChange={(e) =>
+                              handleUpdateTier(idx, "maxKm", parseFloat(e.target.value) || 0)
+                            }
+                            className="w-16 sm:w-20 bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs font-mono font-bold text-neutral-800 text-center focus:ring-1 focus:ring-emerald-400 outline-none"
+                            placeholder="30"
+                          />
+                          <span className="text-[11px] font-semibold text-neutral-600 shrink-0">กม.</span>
+                        </div>
+                      </div>
+
+                      {/* Price Input & Badge */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] text-neutral-500 font-semibold shrink-0">ค่าส่ง:</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={tier.price}
+                            onChange={(e) =>
+                              handleUpdateTier(idx, "price", parseFloat(e.target.value) || 0)
+                            }
+                            className={`w-24 sm:w-28 bg-white border ${
+                              isFree ? "border-emerald-300 text-emerald-800 font-bold" : "border-neutral-300 text-neutral-800 font-bold"
+                            } rounded-lg px-2 py-1 text-xs font-mono text-right focus:ring-1 focus:ring-emerald-400 outline-none`}
+                            placeholder="0 = ฟรี"
+                          />
+                          <span className="text-[11px] font-semibold text-neutral-600 shrink-0">บาท</span>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+                            isFree
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              : "bg-amber-100 text-amber-900 border border-amber-300"
+                          }`}
+                        >
+                          {isFree ? "🟢 ส่งฟรี" : `฿${fmt(tier.price)}`}
+                        </span>
+
+                        {/* Delete Tier Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTier(idx)}
+                          disabled={distanceTiers.length <= 1}
+                          className="p-1 text-neutral-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-neutral-400 rounded-md transition"
+                          title="ลบช่วงนี้"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Excess & Min Order Settings */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-2.5 border-t border-neutral-100">
+                <div className="bg-amber-50/50 p-2.5 rounded-xl border border-amber-200/80">
+                  <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                    หากระยะทางเกินช่วงสูงสุด คิดเพิ่ม (บาท/กม.)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={excessRatePerKm}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        handleInstantDeliveryTierUpdate(distanceTiers, val, minOrderFreeAmount, pricingMode);
+                      }}
+                      className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1 text-xs font-bold font-mono text-amber-900 focus:ring-1 focus:ring-amber-400 outline-none"
+                    />
+                    <span className="text-xs font-bold text-amber-800 shrink-0">บ./กม.</span>
+                  </div>
+                  <span className="text-[9px] text-amber-700 mt-0.5 block">
+                    เช่น เกินช่วงสูงสุด คิดราคาช่วงสูงสุด + กม.ละ {excessRatePerKm} บ.
+                  </span>
+                </div>
+
+                <div className="bg-neutral-50 p-2.5 rounded-xl border border-neutral-200">
+                  <label className="text-[11px] font-bold text-neutral-700 block mb-1">
+                    ยอดสั่งซื้อขั้นต่ำที่ส่งฟรี (บาท)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={minOrderFreeAmount}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        handleInstantDeliveryTierUpdate(distanceTiers, excessRatePerKm, val, pricingMode);
+                      }}
+                      placeholder="0 = ไม่จำกัดยอด"
+                      className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1 text-xs font-mono text-neutral-800 focus:ring-1 focus:ring-neutral-400 outline-none"
+                    />
+                    <span className="text-xs text-neutral-600 shrink-0">บาท</span>
+                  </div>
+                  <span className="text-[9px] text-neutral-500 mt-0.5 block">
+                    เมื่อยอดถึงเกณฑ์ จะได้สิทธิ์ส่งฟรีทันที
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Summary Box */}
+            <div className="bg-neutral-100/80 p-2.5 rounded-lg text-[11px] text-neutral-700 space-y-1 border border-neutral-200/80 mt-2">
+              <div className="flex items-center justify-between font-bold text-neutral-800 pb-1 border-b border-neutral-200/60">
+                <span>💡 ตัวอย่างสรุปอัตราค่าส่งปัจจุบัน:</span>
+                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-semibold">
+                  {distanceTiers.length} ช่วงระยะทาง
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+                {[...distanceTiers]
+                  .sort((a, b) => a.minKm - b.minKm)
+                  .map((t, i) => (
+                    <span key={i} className="inline-flex items-center gap-1">
+                      <span className="text-neutral-500">•</span>
+                      <span>{t.minKm}–{t.maxKm} กม. :</span>
+                      <span className="font-bold text-neutral-900">
+                        {t.price === 0 ? "ฟรี ฿0" : `฿${fmt(t.price)}`}
+                      </span>
+                    </span>
+                  ))}
+                {distanceTiers.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-amber-800">
+                    <span>•</span>
+                    <span>เกิน {[...distanceTiers].sort((a, b) => a.minKm - b.minKm).slice(-1)[0]?.maxKm || 0} กม. :</span>
+                    <span className="font-semibold">
+                      +{excessRatePerKm} บ./กม.
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. PRICES, COSTS, MARKUP & WEIGHTS SECTION FOR CURRENT SELECTED SUPPLIER */}
+        <div className="pt-2">
+          {/* Tab Switcher Header */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5 pb-3 border-b border-neutral-200">
+            <div className="flex items-center gap-2 p-1 bg-neutral-100/90 rounded-2xl border border-neutral-200/90 self-start">
+              <button
+                type="button"
+                onClick={() => setActivePriceWeightTab("prices")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all ${
+                  activePriceWeightTab === "prices"
+                    ? "bg-[#C62828] text-white shadow-sm"
+                    : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60"
+                }`}
+              >
+                <DollarSign size={15} />
+                <span>💰 ราคาขาย, ต้นทุน & บวกกำไร</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivePriceWeightTab("weights")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all ${
+                  activePriceWeightTab === "weights"
+                    ? "bg-amber-600 text-white shadow-sm"
+                    : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60"
+                }`}
+              >
+                <Scale size={15} />
+                <span>⚖️ พิกัดน้ำหนักบรรทุก (กก.)</span>
+              </button>
+            </div>
+
+            <div className="text-xs text-neutral-500 font-medium">
+              กำลังตั้งค่าสำหรับ: <span className="font-bold text-neutral-800">{supplierName}</span> {supplierCode ? `(${supplierCode})` : ""}
+            </div>
+          </div>
+
+          {/* Pricing, Cost & Markup Tab */}
+          {activePriceWeightTab === "prices" && (
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-neutral-200/80 shadow-xs">
+              <SupplierPricingSection
+                pricesInput={pricesInput}
+                costsInput={costsInput}
+                onPriceChange={handlePriceChange}
+                onCostChange={handleCostChange}
+                onMarkupChange={handleMarkupChange}
+                onApplyBulkMarkup={handleApplyBulkMarkup}
+              />
+            </div>
+          )}
+
+          {/* Weights Tab */}
+          {activePriceWeightTab === "weights" && (
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-neutral-200/80 shadow-xs">
+              <SupplierWeightsSection
+                weightsInput={weightsInput}
+                onWeightChange={handleWeightChange}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-4 border-t border-neutral-200">
+          <button
+            type="button"
+            onClick={handleDownloadSingleHTML}
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-neutral-800 hover:bg-neutral-900 text-white font-bold py-3 px-5 rounded-xl shadow-md text-xs sm:text-sm transition"
+          >
+            <Download size={16} />
+            <span>ดาวน์โหลด HTML ออฟไลน์</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSaveCurrentSupplier(false)}
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-[#C62828] hover:bg-[#B71C1C] text-white font-bold py-3 px-6 rounded-xl shadow-md text-xs sm:text-sm transition"
+          >
+            <Save size={16} />
+            <span>บันทึกการตั้งค่าของ {supplierName}</span>
+          </button>
         </div>
       </div>
 
-      {/* Persistent Save Button wrapper */}
-      <div className="flex flex-col sm:flex-row justify-end items-center gap-3 p-2">
-        <button
-          onClick={handleDownloadSingleHTML}
-          className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-neutral-800 hover:bg-neutral-900 active:scale-98 transition text-white font-bold py-3.5 px-5 rounded-xl shadow-md border-b-2 border-neutral-950 text-sm md:text-base"
-          title="ดาวน์โหลดทั้งแอปนี้เป็นไฟล์ HTML ไฟล์เดียวไปเปิดใช้ออฟไลน์ได้ทันที"
-        >
-          <Download size={18} />
-          ดาวน์โหลดไฟล์เดี่ยว (.html) แลกเปลี่ยนออฟไลน์
-        </button>
-        <button
-          onClick={saveToLocal}
-          className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-[#C62828] hover:bg-[#b71c1c] active:scale-98 transition text-white font-bold py-3.5 px-8 rounded-xl shadow-md border-b-2 border-red-800 text-sm md:text-base"
-        >
-          <Save size={18} />
-          บันทึกการตั้งค่าทั้งหมดลงระบบคลาวด์
-        </button>
-      </div>
+      {/* 4. MODAL: ADD NEW SUPPLIER */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
+            />
 
-      {/* DYNAMIC DRAFT DOCUMENT TO CAPTURE - HIDDEN/VISIBLE ONLY ON EMISSION */}
-      <div className="absolute" style={{ position: "absolute", left: "-9999px", top: "-9999px", width: "820px", height: "auto", overflow: "visible" }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative z-10 space-y-5 border border-neutral-100"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-red-50 text-[#C62828] rounded-xl">
+                    <Factory size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-neutral-800 text-lg font-display">
+                      เพิ่มซัพพลายเออร์ / โรงงานใหม่
+                    </h4>
+                    <p className="text-neutral-500 text-xs">กำหนดชื่อและอัตราเริ่มต้นสำหรับซัพพลายเออร์นี้</p>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleCreateSupplier} className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-neutral-700 block mb-1">
+                    ชื่อซัพพลายเออร์ / โรงงานผู้ผลิต <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newSupName}
+                    onChange={(e) => setNewSupName(e.target.value)}
+                    placeholder="เช่น โรงงานคอนกรีตระยอง, ซัพพลายเออร์ B"
+                    className="w-full bg-neutral-50 border border-neutral-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-neutral-800 focus:bg-white focus:ring-2 focus:ring-red-500/20 focus:border-[#C62828] outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-neutral-700 block mb-1">รหัสย่อ (Code)</label>
+                    <input
+                      type="text"
+                      value={newSupCode}
+                      onChange={(e) => setNewSupCode(e.target.value)}
+                      placeholder="เช่น SP-03, RY-01"
+                      className="w-full bg-neutral-50 border border-neutral-300 rounded-xl px-3 py-2 text-sm font-mono text-neutral-800 focus:bg-white focus:border-[#C62828] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-neutral-700 block mb-1">คัดลอกราคาตั้งต้นจาก</label>
+                    <select
+                      value={newSupBaseTemplate}
+                      onChange={(e) => setNewSupBaseTemplate(e.target.value)}
+                      className="w-full bg-neutral-50 border border-neutral-300 rounded-xl px-3 py-2 text-xs font-medium text-neutral-800 focus:bg-white focus:border-[#C62828] outline-none"
+                    >
+                      {currentSuppliers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-neutral-700 block mb-1">โน้ต / คำอธิบายสเปก</label>
+                  <textarea
+                    rows={2}
+                    value={newSupDesc}
+                    onChange={(e) => setNewSupDesc(e.target.value)}
+                    placeholder="เช่น โรงงานซัพพลายเออร์ส่งงานแถบชลบุรี-ระยอง"
+                    className="w-full bg-neutral-50 border border-neutral-300 rounded-xl p-3 text-xs text-neutral-800 focus:bg-white focus:border-[#C62828] outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-neutral-600 hover:bg-neutral-100 text-xs font-bold transition"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-[#C62828] hover:bg-[#B71C1C] text-white text-xs font-bold shadow-md transition flex items-center gap-1.5"
+                  >
+                    <Plus size={15} />
+                    <span>สร้างซัพพลายเออร์</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. HIDDEN DOCUMENT FOR JPG REPORT GENERATION */}
+      <div className="absolute" style={{ position: "absolute", left: "-9999px", top: "-9999px", width: "840px", height: "auto", overflow: "visible" }}>
         <div
           ref={reportRef}
-          className="w-[800px] p-10 bg-white font-sans text-neutral-800 relative space-y-8"
+          className="w-[820px] p-10 bg-white font-sans text-neutral-800 relative space-y-8"
           style={{ fontFamily: "'Kanit', sans-serif" }}
         >
-          {/* Header decorative */}
+          {/* Header */}
           <div className="flex items-start justify-between border-b-4 border-[#C62828] pb-6">
             <div>
-              <h1 className="text-2xl font-black text-[#C62828] tracking-tight uppercase">
-                PONGSAKUL HARDWARE COMPANY LIMITED
-              </h1>
-              <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider">
-                Concrete and Prestressed Slab Prestressed Material Catalog ({APP_VERSION})
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-extrabold uppercase bg-red-100 text-[#C62828] px-2 py-0.5 rounded">
+                  {supplierCode || "SUPPLIER"}
+                </span>
+                <h1 className="text-2xl font-black text-[#C62828] tracking-tight uppercase">
+                  {supplierName}
+                </h1>
+              </div>
+              <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider block mt-1">
+                Concrete and Prestressed Slab Material Catalog ({APP_VERSION})
               </span>
-              <p className="text-sm text-neutral-600 font-medium mt-1">
-                บริษัท พงษ์สกุลฮาร์ดแวร์ จำกัด
-              </p>
+              {supplierDesc && (
+                <p className="text-xs text-neutral-500 font-medium mt-0.5">{supplierDesc}</p>
+              )}
             </div>
             <div className="text-right">
               <span className="bg-[#C62828]/10 text-[#C62828] font-bold text-xs py-1 px-3 rounded-full">
                 แค็ตตาล็อกอัตราราคากลาง
               </span>
               <p className="text-xs text-neutral-400 font-mono mt-1">
-                พิมพ์บิลสะสม: {new Date().toLocaleDateString("th-TH")}
+                วันที่พิมพ์เอกสาร: {new Date().toLocaleDateString("th-TH")}
               </p>
             </div>
           </div>
@@ -1101,7 +1618,6 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                   <span className="text-[#8B0000] font-semibold text-xs">ไอ I-18 มอก. (ท่อนต่อ):</span>
                   <strong className="text-[#8B0000] font-bold font-mono">฿{fmt(pricesInput.i18TISJointPrice)} / ม.</strong>
                 </div>
-
                 <div className="flex justify-between items-center border-b border-neutral-100 pb-1.5 pt-1.5">
                   <span className="text-neutral-500 font-medium text-xs">ไอ I-22 ธรรมดา (ท่อนเดียว):</span>
                   <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.i22NoTISPrice)} / ม.</strong>
@@ -1110,62 +1626,42 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                   <span className="text-[#8B0000] font-semibold text-xs">ไอ I-22 มอก. (ท่อนเดียว):</span>
                   <strong className="text-[#8B0000] font-bold font-mono">฿{fmt(pricesInput.i22TISPrice)} / ม.</strong>
                 </div>
-                <div className="flex justify-between items-center border-b border-neutral-100 pb-1.5">
-                  <span className="text-neutral-500 font-medium text-xs">ไอ I-22 ธรรมดา (ท่อนต่อ):</span>
-                  <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.i22JointPrice)} / ม.</strong>
-                </div>
-                <div className="flex justify-between items-center border-b border-neutral-100 pb-1.5">
-                  <span className="text-[#8B0000] font-semibold text-xs">ไอ I-22 มอก. (ท่อนต่อ):</span>
-                  <strong className="text-[#8B0000] font-bold font-mono">฿{fmt(pricesInput.i22TISJointPrice)} / ม.</strong>
-                </div>
               </div>
             </div>
 
-            {/* S-Shape Piles Catalog block */}
+            {/* S-Piles Table */}
             <div className="border-t border-neutral-100 pt-4 space-y-2">
               <h3 className="text-xs font-bold text-[#8B0000] uppercase tracking-wider">
-                กลุ่มเสาสี่เหลี่ยมตัน S-Shape (Solid Square Pile - สำหรับงานโครงสร้างหลัก)
+                กลุ่มเสาสี่เหลี่ยมตัน S-Shape (Solid Square Pile)
               </h3>
               <div className="grid grid-cols-3 gap-x-6 gap-y-2 text-xs">
                 <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-18:</span>
+                  <span className="text-neutral-500 font-medium">เสาตัน S-18:</span>
                   <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s18Price)} / ม.</strong>
                 </div>
                 <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-22:</span>
+                  <span className="text-neutral-500 font-medium">เสาตัน S-22:</span>
                   <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s22Price)} / ม.</strong>
                 </div>
                 <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-26:</span>
+                  <span className="text-neutral-500 font-medium">เสาตัน S-26:</span>
                   <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s26Price)} / ม.</strong>
-                </div>
-                <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-30:</span>
-                  <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s30Price)} / ม.</strong>
-                </div>
-                <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-35:</span>
-                  <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s35Price)} / ม.</strong>
-                </div>
-                <div className="flex justify-between items-center border-b border-neutral-100 pb-1">
-                  <span className="text-neutral-500 font-medium">เสาสี่เหลี่ยมตัน S-40:</span>
-                  <strong className="text-neutral-900 font-semibold font-mono">฿{fmt(pricesInput.s40Price)} / ม.</strong>
                 </div>
               </div>
             </div>
 
-            <div className="border border-neutral-150 p-4 rounded-xl bg-neutral-50 text-xs">
+            <div className="border border-neutral-200 p-4 rounded-xl bg-neutral-50 text-xs">
               <span className="font-bold block text-neutral-800 mb-1">ข้อพิจารณาและการใช้งาน</span>
               <p className="text-neutral-500 leading-relaxed">
-                ราคาระบุข้างต้นเป็นราคาอ้างอิงส่งมอบมาตรฐานโรงงาน ไม่รวมค่าแรงติดตั้งหรือค่าแรงงานขุดเจาะ ค่าพาหนะขนส่งขึ้นอยู่กับระยะทางการจัดส่งหน้างาน และปริมาตรรถบรรทุกที่เหมาะสม
+                ราคาระบุข้างต้นเป็นราคาอ้างอิงส่งมอบมาตรฐานของ {supplierName} ค่าพาหนะขนส่งขึ้นอยู่กับระยะทางการจัดส่งหน้างานและพิกัดน้ำหนักรวม
               </p>
             </div>
           </div>
 
-          {/* Footer brand */}
+          {/* Footer */}
           <div className="flex items-center justify-between text-[11px] text-neutral-400 border-t border-neutral-100 pt-6">
-            <span>เอกสารสารประโยชน์ราคากลางภายในบริษัท พงษ์สกุลคอนกรีต จำกัด</span>
-            <span>{APP_VERSION} | ออกโดยระบบอัตโนมัติ</span>
+            <span>เอกสารสารประโยชน์ราคากลาง ออกโดยระบบอัตโนมัติ</span>
+            <span>{APP_VERSION}</span>
           </div>
         </div>
       </div>

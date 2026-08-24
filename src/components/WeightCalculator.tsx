@@ -2,6 +2,8 @@ import { Dispatch, SetStateAction, useState } from "react";
 import { AppSettings, WeightItem } from "../types";
 import { weightOptions, truckCapacities } from "../data";
 import { fmt, getTruckAllocationOptions, TruckOption } from "../utils";
+import SupplierQuickSelector from "./SupplierQuickSelector";
+import DeliveryDistanceWidget from "./DeliveryDistanceWidget";
 import { 
   Plus, 
   Trash2, 
@@ -17,7 +19,8 @@ import {
   ShieldCheck, 
   ChevronRight, 
   HelpCircle,
-  Package
+  Package,
+  MapPin
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -25,9 +28,17 @@ interface WeightCalculatorProps {
   settings: AppSettings;
   items: WeightItem[];
   setItems: Dispatch<SetStateAction<WeightItem[]>>;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
-export default function WeightCalculator({ settings, items, setItems }: WeightCalculatorProps) {
+export default function WeightCalculator({ 
+  settings, 
+  items, 
+  setItems, 
+  onSelectSupplier, 
+  onNavigateToSettings 
+}: WeightCalculatorProps) {
   const getWeightPerMeter = (typeValue: string): number => {
     const opt = weightOptions.find((o) => o.value === typeValue);
     if (!opt) return 0;
@@ -109,7 +120,15 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Dynamic List panel */}
       <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-sm border border-neutral-100 flex flex-col justify-between space-y-6">
         <div className="space-y-4">
@@ -512,5 +531,16 @@ export default function WeightCalculator({ settings, items, setItems }: WeightCa
         )}
       </div>
     </div>
+
+    {/* Supplier Location & Google Maps Delivery Distance Calculator */}
+    <div className="pt-2">
+      <DeliveryDistanceWidget
+        settings={settings}
+        totalWeightKg={totalWeight}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
+    </div>
+  </div>
   );
 }

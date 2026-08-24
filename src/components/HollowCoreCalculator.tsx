@@ -1,13 +1,20 @@
 import { useState, useEffect } from "react";
 import { AppSettings } from "../types";
 import { fmt, roundToBeautifulPrice } from "../utils";
+import SupplierQuickSelector from "./SupplierQuickSelector";
 import { Hammer, Sparkles } from "lucide-react";
 
 interface HollowCoreCalculatorProps {
   settings: AppSettings;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
-export default function HollowCoreCalculator({ settings }: HollowCoreCalculatorProps) {
+export default function HollowCoreCalculator({ 
+  settings, 
+  onSelectSupplier, 
+  onNavigateToSettings 
+}: HollowCoreCalculatorProps) {
   // Auto round prices state (sharing via localStorage)
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
     return localStorage.getItem("pongsakulAutoRoundPrice") === "true";
@@ -60,6 +67,13 @@ export default function HollowCoreCalculator({ settings }: HollowCoreCalculatorP
 
   return (
     <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
+
       {/* Options dashboard panel */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-2.5">

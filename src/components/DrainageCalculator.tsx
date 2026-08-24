@@ -1,6 +1,7 @@
 import { useState, useEffect, Dispatch, SetStateAction } from "react";
 import { AppSettings, WeightItem } from "../types";
 import { fmt, roundToBeautifulPrice } from "../utils";
+import SupplierQuickSelector from "./SupplierQuickSelector";
 import { Hammer, Sparkles, Scale, Info } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -9,9 +10,18 @@ interface DrainageCalculatorProps {
   weightItems: WeightItem[];
   setWeightItems: Dispatch<SetStateAction<WeightItem[]>>;
   onNavigateToWeight: () => void;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
-export default function DrainageCalculator({ settings, weightItems, setWeightItems, onNavigateToWeight }: DrainageCalculatorProps) {
+export default function DrainageCalculator({ 
+  settings, 
+  weightItems, 
+  setWeightItems, 
+  onNavigateToWeight,
+  onSelectSupplier,
+  onNavigateToSettings
+}: DrainageCalculatorProps) {
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
     return localStorage.getItem("pongsakulAutoRoundPrice") === "true";
   });
@@ -107,6 +117,13 @@ export default function DrainageCalculator({ settings, weightItems, setWeightIte
 
   return (
     <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
+
       {/* Options dashboard banner */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-2.5">

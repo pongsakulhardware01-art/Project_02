@@ -133,9 +133,64 @@ export interface Weights {
   basin120Weight: number;
 }
 
-export interface AppSettings {
+export interface SupplierLocation {
+  address: string;
+  mapsUrl?: string;
+  lat?: number;
+  lng?: number;
+  placeName?: string;
+}
+
+export interface DistanceTier {
+  id: string;
+  minKm: number; // ระยะทางตั้งแต่ (กม.) เช่น 0, 31, 61
+  maxKm: number; // ถึงระยะทาง (กม.) เช่น 30, 60, 90
+  price: number; // ค่าจัดส่ง (บาท) เช่น 0, 3000, 4500
+}
+
+export interface DeliveryConfig {
+  freeRadiusKm?: number; // ระยะทางส่งฟรี (กม.) (backward compatibility)
+  ratePerKm?: number; // ค่าขนส่งต่อกิโลเมตรส่วนเกิน (บาท/กม.)
+  basePrice?: number; // ค่าขนส่งเริ่มต้น / ค่าตั้งต้น (บาท)
+  minOrderFreeAmount?: number; // ยอดสั่งซื้อขั้นต่ำที่ส่งฟรี (ถ้ามี)
+  pricingMode?: "tiered" | "per_km"; // โหมดการคิดราคา: "tiered" หรือ "per_km"
+  distanceTiers?: DistanceTier[]; // รายการช่วงระยะทางที่ผู้ใช้กำหนด
+  excessRatePerKm?: number; // คิดเพิ่มต่อกิโลเมตรเมื่อเกินช่วงสูงสุด (บาท/กม.)
+}
+
+export interface SupplierProfile {
+  id: string;
+  name: string;
+  code?: string;
+  isDefault?: boolean;
+  description?: string;
+  contact?: string;
+  phone?: string;
+  location?: string;
+  supplierLocation?: SupplierLocation;
+  deliveryConfig?: DeliveryConfig;
   prices: Prices;
+  costs?: Partial<Prices>;
   weights: Weights;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DeliveryDestination {
+  name?: string;
+  address: string;
+  mapsUrl?: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface AppSettings {
+  activeSupplierId: string;
+  suppliers: SupplierProfile[];
+  prices: Prices;
+  costs?: Partial<Prices>;
+  weights: Weights;
+  defaultDestination?: DeliveryDestination;
 }
 
 export interface WeightItem {

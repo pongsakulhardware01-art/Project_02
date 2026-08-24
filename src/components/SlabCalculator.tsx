@@ -3,6 +3,7 @@ import { AppSettings, WeightItem } from "../types";
 import { fmt, getLoadCapacity, roundToBeautifulPrice } from "../utils";
 import { loadCapacityTable } from "../data";
 import SlabVisualizer from "./SlabVisualizer";
+import SupplierQuickSelector from "./SupplierQuickSelector";
 import { 
   Check, 
   Info, 
@@ -28,6 +29,8 @@ interface SlabCalculatorProps {
   weightItems?: WeightItem[];
   setWeightItems?: Dispatch<SetStateAction<WeightItem[]>>;
   onNavigateToWeight?: () => void;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
 interface ScannedSlabItem {
@@ -44,7 +47,9 @@ export default function SlabCalculator({
   settings, 
   weightItems, 
   setWeightItems, 
-  onNavigateToWeight 
+  onNavigateToWeight,
+  onSelectSupplier,
+  onNavigateToSettings
 }: SlabCalculatorProps) {
   // Modes: "single" for original single calculator, "batch" for AI image scanner
   const [calculatorMode, setCalculatorMode] = useState<"single" | "batch">("single");
@@ -811,6 +816,12 @@ const parseSlabsTextClientSide = (
 
   return (
     <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
       
       {/* Selector tab for modes and Auto-Round Price Option */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-2xl border border-neutral-150 shadow-sm">

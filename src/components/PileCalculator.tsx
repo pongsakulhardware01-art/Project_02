@@ -2,13 +2,20 @@ import { useState } from "react";
 import { AppSettings } from "../types";
 import { fmt } from "../utils";
 import PileVisualizer from "./PileVisualizer";
+import SupplierQuickSelector from "./SupplierQuickSelector";
 import { Hammer } from "lucide-react";
 
 interface PileCalculatorProps {
   settings: AppSettings;
+  onSelectSupplier?: (supplierId: string) => void;
+  onNavigateToSettings?: () => void;
 }
 
-export default function PileCalculator({ settings }: PileCalculatorProps) {
+export default function PileCalculator({ 
+  settings, 
+  onSelectSupplier, 
+  onNavigateToSettings 
+}: PileCalculatorProps) {
   const [pileType, setPileType] = useState<string>("hex");
   const [pileConnection, setPileConnection] = useState<string>("single");
   const [pileStandard, setPileStandard] = useState<string>("no_tis");
@@ -101,7 +108,15 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
   const totalWeight = weightPerMeter * calcPileLength * calcPileCount;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="space-y-6">
+      {/* Active Supplier Quick Selector Bar */}
+      <SupplierQuickSelector
+        settings={settings}
+        onSelectSupplier={onSelectSupplier}
+        onNavigateToSettings={onNavigateToSettings}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Input controls */}
       <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-sm border border-neutral-100 flex flex-col justify-between space-y-5">
         <div>
@@ -264,5 +279,6 @@ export default function PileCalculator({ settings }: PileCalculatorProps) {
         </div>
       </div>
     </div>
+  </div>
   );
 }
