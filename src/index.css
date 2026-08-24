@@ -44,3 +44,15 @@ h1, h2, h3, h4, th, .font-display {
 .transition-all-custom {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Custom Leaflet Marker Styling */
+.custom-leaflet-origin-marker,
+.custom-leaflet-dest-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+@keyframes bouncePin {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-4px); }
+}

@@ -1,6 +1,6 @@
 import { AppSettings, Prices, Weights, SupplierProfile, DistanceTier } from "./types";
 
-export const APP_VERSION = "V.46";
+export const APP_VERSION = "V.47";
 
 export const defaultDistanceTiers: DistanceTier[] = [
   { id: "tier-1", minKm: 0, maxKm: 30, price: 0 },

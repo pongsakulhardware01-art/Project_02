@@ -5,10 +5,10 @@ import {
   parseGoogleMapsInput, 
   calculateSupplierDelivery, 
   isValidLatLng, 
-  PRESET_LOCATIONS, 
   DeliveryCalculationResult 
 } from "../utils/geoUtils";
 import { fmt } from "../utils";
+import MapPinPicker from "./MapPinPicker";
 import { 
   MapPin, 
   Navigation, 
@@ -26,7 +26,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Scale,
-  Settings
+  Settings,
+  Layers,
+  Map as MapIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -73,7 +75,7 @@ export default function DeliveryDistanceWidget({
   const [destLat, setDestLat] = useState<number | undefined>(() => initialDestination?.lat);
   const [destLng, setDestLng] = useState<number | undefined>(() => initialDestination?.lng);
 
-  const [showPresets, setShowPresets] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(true);
   const [showManualCoords, setShowManualCoords] = useState(false);
   const [showSupplierComparison, setShowSupplierComparison] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -228,16 +230,19 @@ export default function DeliveryDistanceWidget({
     );
   };
 
-  // Select Preset Location
-  const handleSelectPreset = (preset: typeof PRESET_LOCATIONS[0]) => {
-    setDestAddress(preset.name);
-    setDestLat(preset.lat);
-    setDestLng(preset.lng);
-    setDestMapsInput(`${preset.lat}, ${preset.lng}`);
+  // Handle Location Selected or Pinned on Map
+  const handleMapLocationSelect = (lat: number, lng: number, addressSuggestion?: string) => {
+    setDestLat(lat);
+    setDestLng(lng);
+    setDestMapsInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+    if (addressSuggestion) {
+      setDestAddress(addressSuggestion);
+    } else if (!destAddress) {
+      setDestAddress(`พิกัดหน้างาน (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    }
     setLastUpdatedKey(Date.now());
-    setShowPresets(false);
-    setParseNotice(`📌 เลือก ${preset.name} (คำนวณใหม่เรียลไทม์แล้ว)`);
-    setTimeout(() => setParseNotice(null), 2500);
+    setParseNotice(`⚡ ปักหมุดหน้างานแล้ว (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    setTimeout(() => setParseNotice(null), 3000);
   };
 
   // Copy delivery summary to clipboard
@@ -410,11 +415,17 @@ export default function DeliveryDistanceWidget({
 
                 <button
                   type="button"
-                  onClick={() => setShowPresets(!showPresets)}
-                  className="text-[10px] font-bold text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-2xs flex items-center gap-1"
+                  onClick={() => setShowMapPicker(!showMapPicker)}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded shadow-2xs flex items-center gap-1 transition-colors ${
+                    showMapPicker 
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300" 
+                      : "bg-white text-neutral-600 hover:text-neutral-900 border border-neutral-200"
+                  }`}
+                  title="เปิด/ปิด แผนที่ปักหมุดโลเคชั่นจัดส่ง"
                 >
-                  <span>📌 พื้นที่ยอดนิยม</span>
-                  {showPresets ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  <MapIcon className="w-3 h-3 text-emerald-600" />
+                  <span>{showMapPicker ? "ซ่อนแผนที่" : "📍 ปักหมุดบนแผนที่"}</span>
+                  {showMapPicker ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
 
                 <button
@@ -522,26 +533,6 @@ export default function DeliveryDistanceWidget({
                 )}
               </AnimatePresence>
 
-              {/* Quick matching chips if user typed keyword */}
-              {destAddress && (
-                <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {PRESET_LOCATIONS.filter(p => 
-                    p.name.toLowerCase().includes(destAddress.toLowerCase()) || 
-                    p.province.toLowerCase().includes(destAddress.toLowerCase()) ||
-                    p.keywords.some(k => k.toLowerCase().includes(destAddress.toLowerCase()))
-                  ).slice(0, 3).map((match, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleSelectPreset(match)}
-                      className="text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
-                    >
-                      <span>📍 เลือก: {match.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {destLat !== undefined && destLng !== undefined && (
                 <div className="flex items-center justify-between text-[10px] text-neutral-500 font-mono pt-1 border-t border-neutral-100">
                   <span className="text-emerald-700 font-semibold flex items-center gap-1">
@@ -559,41 +550,36 @@ export default function DeliveryDistanceWidget({
           </div>
         </div>
 
-        {/* Preset Locations Dropdown Area */}
+        {/* Interactive Map Pin Picker for Destination */}
         <AnimatePresence>
-          {showPresets && (
+          {showMapPicker && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 space-y-2"
+              className="space-y-2"
             >
-              <div className="text-xs font-bold text-neutral-700 flex items-center justify-between">
-                <span>เลือกพื้นที่ก่อสร้างและฮับยอดนิยม (คลิกเพื่อคำนวณทันที)</span>
-                <button
-                  type="button"
-                  onClick={() => setShowPresets(false)}
-                  className="text-[10px] text-neutral-500 hover:text-neutral-800"
-                >
-                  ปิด ✕
-                </button>
+              <div className="flex items-center justify-between text-xs font-bold text-neutral-800">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>📍 แผนที่ปักหมุดจุดหมายปลายทาง (คลิกหรือลากหมุด 📍 เพื่อคำนวณทันที)</span>
+                </div>
+                <span className="text-[11px] text-neutral-500 font-normal">
+                  โรงงานต้นทาง: <strong className="text-red-700 font-bold">{activeSupplier.name}</strong> (ส่งฟรี {freeRadius} กม.)
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5">
-                {PRESET_LOCATIONS.map((loc, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectPreset(loc)}
-                    className="text-left bg-white hover:bg-red-50 hover:border-red-300 border border-neutral-200 p-2 rounded-lg text-xs transition-colors group"
-                  >
-                    <div className="font-bold text-neutral-800 group-hover:text-red-700 text-[11px] truncate">
-                      {loc.name}
-                    </div>
-                    <div className="text-[10px] text-neutral-500 truncate">{loc.province}</div>
-                  </button>
-                ))}
-              </div>
+              <MapPinPicker
+                originLat={originLat}
+                originLng={originLng}
+                originName={activeSupplier.name}
+                destLat={destLat}
+                destLng={destLng}
+                freeRadiusKm={freeRadius}
+                distanceKm={calcResult?.distanceKm}
+                onLocationSelect={handleMapLocationSelect}
+                activeSupplier={activeSupplier}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -792,7 +778,7 @@ export default function DeliveryDistanceWidget({
                 ยังไม่ได้ระบุสถานที่จัดส่งปลายทาง
               </p>
               <p className="text-[11px] text-neutral-500 max-w-md mx-auto mt-0.5">
-                พิมพ์ชื่อสถานที่, วางลิงก์ Google Maps / พิกัด หรือกดปุ่ม <strong>"ใช้ GPS"</strong> หรือ <strong>"📌 พื้นที่ยอดนิยม"</strong> ด้านบนเพื่อเริ่มคำนวณระยะทางและค่าจัดส่งอัตโนมัติ
+                พิมพ์ชื่อสถานที่, วางลิงก์ Google Maps / พิกัด หรือคลิก <strong>"📍 ปักหมุดบนแผนที่"</strong> ด้านบนเพื่อเริ่มคำนวณระยะทางและค่าจัดส่งอัตโนมัติ
               </p>
             </div>
             <div className="flex items-center justify-center gap-2 pt-1">
@@ -807,10 +793,11 @@ export default function DeliveryDistanceWidget({
               </button>
               <button
                 type="button"
-                onClick={() => setShowPresets(true)}
-                className="text-xs font-bold text-neutral-700 hover:text-neutral-900 bg-white hover:bg-neutral-100 border border-neutral-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+                onClick={() => setShowMapPicker(true)}
+                className="text-xs font-bold text-emerald-800 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                <span>📌 เลือกจากพื้นที่ยอดนิยม</span>
+                <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                <span>📍 ปักหมุดโลเคชั่นจุดหมายบนแผนที่</span>
               </button>
             </div>
           </div>
