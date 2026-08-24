@@ -1,6 +1,14 @@
-import { AppSettings, Prices, Weights, SupplierProfile, DistanceTier } from "./types";
+import { AppSettings, Prices, Weights, SupplierProfile, DistanceTier, SupplierTruck } from "./types";
 
-export const APP_VERSION = "V.47";
+export const APP_VERSION = "V.49";
+
+export const defaultSupplierTrucks: SupplierTruck[] = [
+  { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7500, label: "7.5 ตัน", enabled: true },
+  { id: "truck_10w", name: "รถบรรทุก 10 ล้อ", capacityKg: 13500, label: "13.5 ตัน", enabled: true },
+  { id: "truck_12w", name: "รถบรรทุก 12 ล้อ", capacityKg: 16500, label: "16.5 ตัน", enabled: true },
+  { id: "truck_trailer", name: "รถเทเลอร์", capacityKg: 25000, label: "25.0 ตัน", enabled: true },
+  { id: "truck_semi", name: "รถพ่วง", capacityKg: 31000, label: "31.0 ตัน", enabled: true },
+];
 
 export const defaultDistanceTiers: DistanceTier[] = [
   { id: "tier-1", minKm: 0, maxKm: 30, price: 0 },
@@ -255,6 +263,16 @@ export const defaultSuppliers: SupplierProfile[] = [
       ratePerKm: 25, // ส่วนเกิน 25 บาท/กม.
       basePrice: 0,
       minOrderFreeAmount: 0,
+      minOrderCriteria: "full_truckload_96", // เต็มเที่ยว (96% ของพิกัดรถ)
+      fullLoadThresholdPercent: 96,
+      minWeightKg: 0,
+      availableTrucks: [
+        { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7500, label: "7.5 ตัน", enabled: true },
+        { id: "truck_10w", name: "รถบรรทุก 10 ล้อ", capacityKg: 13500, label: "13.5 ตัน", enabled: true },
+        { id: "truck_12w", name: "รถบรรทุก 12 ล้อ", capacityKg: 16500, label: "16.5 ตัน", enabled: true },
+        { id: "truck_trailer", name: "รถเทเลอร์", capacityKg: 25000, label: "25.0 ตัน", enabled: true },
+        { id: "truck_semi", name: "รถพ่วง", capacityKg: 31000, label: "31.0 ตัน", enabled: true },
+      ],
     },
     prices: { ...defaultPrices },
     costs: { ...defaultCosts },
@@ -289,6 +307,16 @@ export const defaultSuppliers: SupplierProfile[] = [
       ratePerKm: 30, // ส่วนเกิน 30 บาท/กม.
       basePrice: 300,
       minOrderFreeAmount: 50000,
+      minOrderCriteria: "full_truckload_96",
+      fullLoadThresholdPercent: 96,
+      minWeightKg: 0,
+      availableTrucks: [
+        { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7000, label: "7.0 ตัน", enabled: true },
+        { id: "truck_10w", name: "รถบรรทุก 10 ล้อ", capacityKg: 13000, label: "13.0 ตัน", enabled: true },
+        { id: "truck_12w", name: "รถบรรทุก 12 ล้อ", capacityKg: 16000, label: "16.0 ตัน", enabled: false },
+        { id: "truck_trailer", name: "รถเทเลอร์", capacityKg: 24000, label: "24.0 ตัน", enabled: true },
+        { id: "truck_semi", name: "รถพ่วง", capacityKg: 30000, label: "30.0 ตัน", enabled: true },
+      ],
     },
     prices: { ...defaultPrices },
     costs: { ...defaultCosts },

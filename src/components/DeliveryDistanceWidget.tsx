@@ -17,6 +17,7 @@ import {
   Sparkles, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
   Copy, 
   Check, 
   ChevronDown, 
@@ -69,12 +70,29 @@ export default function DeliveryDistanceWidget({
     : (settings?.suppliers || defaultSuppliers);
 
   const effectiveOrderAmount = orderTotalAmount || orderAmount || 0;
+
+  // Available trucks for the active supplier
+  const availableTrucks = activeSupplier.deliveryConfig?.availableTrucks?.filter((t) => t.enabled) || [];
+  const [selectedTruckId, setSelectedTruckId] = useState<string>(() => availableTrucks[0]?.id || "truck_6wheel");
+  const [manualWeightInput, setManualWeightInput] = useState<number | undefined>(undefined);
+
+  // Synchronize selected truck when active supplier changes
+  useEffect(() => {
+    const trucks = activeSupplier.deliveryConfig?.availableTrucks?.filter((t) => t.enabled) || [];
+    if (trucks.length > 0 && !trucks.some((t) => t.id === selectedTruckId)) {
+      setSelectedTruckId(trucks[0].id);
+    }
+  }, [activeSupplier.id, activeSupplier.deliveryConfig?.availableTrucks]);
+
+  const effectiveWeightKg = totalWeightKg > 0 ? totalWeightKg : (manualWeightInput || 0);
+
   // Destination input state - Clean blank by default so the user inputs everything themselves
   const [destAddress, setDestAddress] = useState<string>(() => initialDestination?.address || "");
   const [destMapsInput, setDestMapsInput] = useState<string>(() => initialDestination?.mapsUrl || "");
   const [destLat, setDestLat] = useState<number | undefined>(() => initialDestination?.lat);
   const [destLng, setDestLng] = useState<number | undefined>(() => initialDestination?.lng);
 
+  const [multiplyFeeByTrips, setMultiplyFeeByTrips] = useState<boolean>(true);
   const [showMapPicker, setShowMapPicker] = useState(true);
   const [showManualCoords, setShowManualCoords] = useState(false);
   const [showSupplierComparison, setShowSupplierComparison] = useState(false);
@@ -184,22 +202,30 @@ export default function DeliveryDistanceWidget({
     }
   }, [destMapsInput]);
 
-  // Current calculation result
+  // Current calculation result with full load and truck constraints
   const calcResult: DeliveryCalculationResult | null = calculateSupplierDelivery(
     activeSupplier,
     destLat,
     destLng,
     destAddress,
     "หน้างานลูกค้า",
-    effectiveOrderAmount
+    effectiveOrderAmount,
+    effectiveWeightKg,
+    selectedTruckId
   );
+
+  const tripsNeeded = calcResult?.fullLoadStatus?.tripsNeeded || 1;
+  const baseTripFee = calcResult?.deliveryFee || 0;
+  const effectiveDeliveryFee = (multiplyFeeByTrips && tripsNeeded > 1 && !calcResult?.isFreeDelivery)
+    ? baseTripFee * tripsNeeded
+    : baseTripFee;
 
   // Notify parent component about delivery fee
   useEffect(() => {
     if (calcResult && onApplyDeliveryFee) {
-      onApplyDeliveryFee(calcResult.deliveryFee, calcResult.distanceKm, calcResult.isFreeDelivery);
+      onApplyDeliveryFee(effectiveDeliveryFee, calcResult.distanceKm, calcResult.isFreeDelivery);
     }
-  }, [calcResult?.deliveryFee, calcResult?.distanceKm, calcResult?.isFreeDelivery]);
+  }, [effectiveDeliveryFee, calcResult?.distanceKm, calcResult?.isFreeDelivery]);
 
   // Handle GPS location
   const handleGetCurrentLocation = () => {
@@ -550,6 +576,334 @@ export default function DeliveryDistanceWidget({
           </div>
         </div>
 
+        {/* Supplier Truck Fleet & Full Load (96%) Assessment Panel */}
+        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-neutral-200/90 shadow-2xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-neutral-100">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-red-100 flex items-center justify-center text-red-700">
+                  <Truck size={14} />
+                </div>
+                <h4 className="text-xs sm:text-sm font-bold text-neutral-900">
+                  ประเภทรถขนส่ง & ตรวจสอบเกณฑ์เต็มเที่ยว ({activeSupplier.name})
+                </h4>
+              </div>
+              <p className="text-[11px] text-neutral-500">
+                เลือกประเภทรถของซัพพลายเออร์ และตรวจสอบน้ำหนักบรรทุกตามเกณฑ์เต็มเที่ยว 96%
+              </p>
+            </div>
+
+            {/* Simulated / Order Weight Input */}
+            <div className="flex items-center gap-2 bg-neutral-50 p-1.5 rounded-xl border border-neutral-200/80 self-start sm:self-auto">
+              <Scale size={14} className="text-amber-600 ml-1 shrink-0" />
+              <span className="text-xs font-semibold text-neutral-700">น้ำหนักสินค้า:</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={effectiveWeightKg || ""}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setManualWeightInput(isNaN(val) ? undefined : Math.max(0, val));
+                  setLastUpdatedKey(Date.now());
+                }}
+                placeholder={totalWeightKg > 0 ? String(totalWeightKg) : "0"}
+                className="w-24 bg-white border border-neutral-300 rounded-lg px-2 py-0.5 text-xs font-mono font-bold text-right text-neutral-900 focus:ring-1 focus:ring-red-400 outline-none"
+              />
+              <span className="text-xs font-bold text-neutral-700 pr-1">กก.</span>
+            </div>
+          </div>
+
+          {/* Truck Selection Radio/Chips */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-neutral-700 block">
+                เลือกประเภทรถที่ใช้งาน (มี {availableTrucks.length} ประเภท):
+              </span>
+              {effectiveWeightKg > 0 && (
+                <span className="text-[11px] font-semibold text-neutral-500">
+                  คำนวณจากน้ำหนักรวม: <strong className="font-mono text-neutral-800">{fmt(effectiveWeightKg)} กก.</strong>
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {availableTrucks.map((truck) => {
+                const isSelected = selectedTruckId === truck.id;
+                const thresholdPct = activeSupplier.deliveryConfig?.fullLoadThresholdPercent ?? 96;
+                const target96 = Math.round(truck.capacityKg * (thresholdPct / 100));
+                const tripsForThisTruck = effectiveWeightKg > 0 ? Math.max(1, Math.ceil(effectiveWeightKg / truck.capacityKg)) : 1;
+                const isOverweightForTruck = effectiveWeightKg > truck.capacityKg;
+                const loadPct = effectiveWeightKg > 0 ? Math.round((effectiveWeightKg / truck.capacityKg) * 100) : 0;
+
+                return (
+                  <button
+                    key={truck.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTruckId(truck.id);
+                      setLastUpdatedKey(Date.now());
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-1.5 ${
+                      isSelected
+                        ? "bg-red-50/70 border-red-500 ring-2 ring-red-500/20 shadow-xs"
+                        : isOverweightForTruck
+                        ? "bg-neutral-50/70 border-amber-200/80 hover:border-amber-300 hover:bg-neutral-100/50"
+                        : "bg-neutral-50/60 border-neutral-200 hover:border-neutral-300 hover:bg-neutral-100/50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Truck
+                          size={15}
+                          className={isSelected ? "text-[#C62828]" : "text-neutral-500"}
+                        />
+                        <span className={`text-xs font-bold ${isSelected ? "text-neutral-900" : "text-neutral-700"}`}>
+                          {truck.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isSelected && (
+                          <span className="text-[10px] bg-[#C62828] text-white font-bold px-1.5 py-0.2 rounded-full">
+                            เลือกอยู่
+                          </span>
+                        )}
+                        {effectiveWeightKg > 0 && (
+                          isOverweightForTruck ? (
+                            <span className="text-[10px] bg-red-100 text-red-800 font-bold px-1.5 py-0.2 rounded border border-red-300 shadow-2xs">
+                              ⚠️ {tripsForThisTruck} คัน/เที่ยว
+                            </span>
+                          ) : loadPct >= thresholdPct ? (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-300 shadow-2xs">
+                              🎯 1 คัน ({loadPct}%)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-neutral-100 text-neutral-700 font-bold px-1.5 py-0.2 rounded border border-neutral-300">
+                              1 คัน ({loadPct}%)
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-baseline justify-between text-[11px] pt-1 border-t border-neutral-200/60">
+                      <span className="text-neutral-500">
+                        พิกัด: <strong className="font-mono text-neutral-800">{fmt(truck.capacityKg)} กก.</strong>
+                      </span>
+                      <span className="font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded text-[10px]">
+                        เต็มเที่ยว {thresholdPct}%: {fmt(target96)} กก.
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Full Load & Multi-Trip Assessment Panel */}
+          {calcResult?.fullLoadStatus && (
+            <div className="pt-2 space-y-3">
+              {/* Primary Status Card */}
+              <div
+                className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
+                  calcResult.fullLoadStatus.isFullLoad
+                    ? "bg-emerald-50/80 border-emerald-300/80 text-emerald-950"
+                    : calcResult.fullLoadStatus.loadPercent > 100
+                    ? "bg-red-50/80 border-red-300/80 text-red-950"
+                    : "bg-amber-50/80 border-amber-300/80 text-amber-950"
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-start sm:items-center gap-2">
+                    <span className="text-xl shrink-0 mt-0.5 sm:mt-0">
+                      {calcResult.fullLoadStatus.isFullLoad
+                        ? "✅"
+                        : calcResult.fullLoadStatus.loadPercent > 100
+                        ? "⚠️"
+                        : "⏳"}
+                    </span>
+                    <div>
+                      <div className="text-xs sm:text-sm font-extrabold flex items-center gap-2 flex-wrap">
+                        <span>{calcResult.fullLoadStatus.statusMessage}</span>
+                        <span className="font-mono bg-white/95 px-2 py-0.5 rounded-md border border-current font-bold text-xs shadow-2xs">
+                          {calcResult.fullLoadStatus.loadPercent}%
+                        </span>
+                      </div>
+                      <div className="text-[11px] opacity-85 mt-0.5">
+                        {calcResult.fullLoadStatus.detailMessage}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-left sm:text-right shrink-0 pl-7 sm:pl-0">
+                    <div className="text-xs font-mono font-bold">
+                      {fmt(calcResult.fullLoadStatus.currentWeightKg)} / {fmt(calcResult.fullLoadStatus.capacityKg)} กก.
+                    </div>
+                    <div className="text-[10px] opacity-75">
+                      เกณฑ์ {calcResult.fullLoadStatus.thresholdPercent}% = {fmt(calcResult.fullLoadStatus.targetWeightKg)} กก.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Capacity Meter with 96% Marker */}
+                <div className="relative pt-1">
+                  <div className="w-full h-2.5 bg-neutral-200/80 rounded-full overflow-hidden flex">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        calcResult.fullLoadStatus.isFullLoad
+                          ? "bg-emerald-500"
+                          : calcResult.fullLoadStatus.loadPercent > 100
+                          ? "bg-red-500"
+                          : "bg-amber-500"
+                      }`}
+                      style={{ width: `${Math.min(100, calcResult.fullLoadStatus.loadPercent)}%` }}
+                    />
+                  </div>
+
+                  {/* Threshold Pin Line at 96% */}
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-neutral-700 pointer-events-none"
+                    style={{ left: `${Math.min(99, calcResult.fullLoadStatus.thresholdPercent)}%` }}
+                    title={`เกณฑ์เต็มเที่ยว ${calcResult.fullLoadStatus.thresholdPercent}%`}
+                  >
+                    <span className="absolute -top-4 -translate-x-1/2 text-[9px] font-extrabold text-neutral-700 bg-white/90 px-1 rounded shadow-2xs">
+                      {calcResult.fullLoadStatus.thresholdPercent}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Multi-Trip Recommendation & Breakdown (When Overweight / tripsNeeded > 1) */}
+              {calcResult.fullLoadStatus.tripsNeeded > 1 && (
+                <div className="bg-gradient-to-br from-red-50/90 via-white to-amber-50/50 p-4 rounded-xl border border-red-200/90 shadow-2xs space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-red-100 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
+                        <Truck size={15} />
+                      </div>
+                      <div>
+                        <h5 className="text-xs sm:text-sm font-bold text-neutral-900">
+                          แผนจัดสรรเที่ยวขนส่งสำหรับ {calcResult.fullLoadStatus.truckName}
+                        </h5>
+                        <p className="text-[11px] text-neutral-600">
+                          น้ำหนักรวม {fmt(calcResult.fullLoadStatus.currentWeightKg)} กก. ต้องใช้ทั้งหมด{" "}
+                          <strong className="text-red-700 font-extrabold underline decoration-red-400 font-mono text-xs">
+                            {calcResult.fullLoadStatus.tripsNeeded} คัน ({calcResult.fullLoadStatus.tripsNeeded} เที่ยว)
+                          </strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-red-100/80 text-red-900 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto">
+                      <AlertTriangle size={14} className="text-red-600" />
+                      <span>เกินพิกัด 1 คัน {(calcResult.fullLoadStatus.currentWeightKg - calcResult.fullLoadStatus.capacityKg).toLocaleString()} กก.</span>
+                    </div>
+                  </div>
+
+                  {/* Trip Breakdown Grid */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-neutral-700 block">
+                      📋 จำแนกน้ำหนักบรรทุกในแต่ละเที่ยว:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {calcResult.fullLoadStatus.tripDetails.map((trip) => (
+                        <div
+                          key={trip.tripNumber}
+                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                            trip.loadPercent === 100
+                              ? "bg-white border-neutral-300 shadow-2xs"
+                              : trip.isFullLoad
+                              ? "bg-emerald-50/70 border-emerald-300 shadow-2xs"
+                              : "bg-amber-50/70 border-amber-300 shadow-2xs"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs font-bold text-neutral-900">
+                            <span className="flex items-center gap-1">
+                              <span>🚚 คันที่ {trip.tripNumber}</span>
+                            </span>
+                            <span className="font-mono text-red-700 font-extrabold">
+                              {fmt(trip.weightKg)} กก.
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] mt-1 pt-1 border-t border-neutral-200/60 text-neutral-500">
+                            <span>พิกัด {fmt(trip.maxCapacityKg)} กก.</span>
+                            <span
+                              className={`font-bold ${
+                                trip.loadPercent === 100
+                                  ? "text-neutral-800"
+                                  : trip.isFullLoad
+                                  ? "text-emerald-700"
+                                  : "text-amber-800"
+                              }`}
+                            >
+                              ระวาง {trip.loadPercent}% {trip.isFullLoad ? "🎯" : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Smart Alternative Fleet Recommendation (Single Trip Option) */}
+                  {calcResult.fullLoadStatus.singleTripAlternative && (
+                    <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-3 rounded-xl border border-emerald-300/90 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                          <Sparkles size={15} className="text-emerald-600 animate-bounce" />
+                          <span>💡 ข้อแนะนำทางเลือก: ประหยัดเที่ยวขนส่งจบใน 1 คัน!</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800">
+                          เปลี่ยนเป็น <strong>{calcResult.fullLoadStatus.singleTripAlternative.truckName}</strong> (พิกัด {fmt(calcResult.fullLoadStatus.singleTripAlternative.capacityKg)} กก.) สามารถขนส่งสินค้าทั้งหมด <strong>{fmt(calcResult.fullLoadStatus.currentWeightKg)} กก.</strong> ได้ใน <strong>1 เที่ยวทันที</strong>
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTruckId(calcResult.fullLoadStatus!.singleTripAlternative!.truckId);
+                          setLastUpdatedKey(Date.now());
+                        }}
+                        className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <span>สลับเป็น {calcResult.fullLoadStatus.singleTripAlternative.truckName} (1 คัน)</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Multi-Trip Fee Calculation & Multiplier Setting */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white/95 p-2.5 rounded-lg border border-neutral-200 text-xs">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={multiplyFeeByTrips}
+                        onChange={(e) => {
+                          setMultiplyFeeByTrips(e.target.checked);
+                          setLastUpdatedKey(Date.now());
+                        }}
+                        className="w-4 h-4 text-[#C62828] accent-[#C62828] rounded border-neutral-300 focus:ring-red-500 cursor-pointer"
+                      />
+                      <span className="font-bold text-neutral-800">
+                        คำนวณค่าจัดส่งรวมตามจำนวนเที่ยวจริง (x{calcResult.fullLoadStatus.tripsNeeded} เที่ยว)
+                      </span>
+                    </label>
+
+                    <div className="text-left sm:text-right pl-6 sm:pl-0">
+                      <span className="text-neutral-500 text-[11px]">
+                        เที่ยวละ ฿{fmt(baseTripFee)} x {calcResult.fullLoadStatus.tripsNeeded} เที่ยว ={" "}
+                      </span>
+                      <strong className="text-[#C62828] font-mono font-bold text-sm">
+                        ฿{fmt(baseTripFee * calcResult.fullLoadStatus.tripsNeeded)} บาท
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Interactive Map Pin Picker for Destination */}
         <AnimatePresence>
           {showMapPicker && (
@@ -647,12 +1001,19 @@ export default function DeliveryDistanceWidget({
 
                 {/* Right: Net Delivery Fee & Action */}
                 <motion.div 
-                  key={`fee-${calcResult.deliveryFee}`}
+                  key={`fee-${effectiveDeliveryFee}-${multiplyFeeByTrips}`}
                   initial={{ scale: 1.05 }}
                   animate={{ scale: 1 }}
                   className="flex flex-col sm:items-end justify-center bg-white/90 p-3.5 rounded-xl border border-neutral-200/80 shadow-2xs min-w-[220px]"
                 >
-                  <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide">ค่าจัดส่งสุทธิ</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide">ค่าจัดส่งสุทธิ</span>
+                    {tripsNeeded > 1 && !calcResult.isFreeDelivery && (
+                      <span className="text-[10px] bg-red-100 text-red-800 font-bold px-1.5 py-0.2 rounded border border-red-200">
+                        {tripsNeeded} เที่ยว
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-baseline gap-1 my-0.5">
                     {calcResult.isFreeDelivery ? (
                       <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600">
@@ -660,15 +1021,23 @@ export default function DeliveryDistanceWidget({
                       </span>
                     ) : (
                       <span className="text-2xl sm:text-3xl font-extrabold font-mono text-red-600">
-                        ฿{fmt(calcResult.deliveryFee)}
+                        ฿{fmt(effectiveDeliveryFee)}
                       </span>
                     )}
                     {!calcResult.isFreeDelivery && <span className="text-xs font-bold text-neutral-600">บาท</span>}
                   </div>
 
-                  <div className="text-[10px] text-neutral-500">
+                  <div className="text-[10px] text-neutral-500 text-right">
                     {calcResult.isFreeDelivery ? (
                       <span className="text-emerald-700 font-semibold">ประหยัดค่าขนส่งให้ลูกค้า</span>
+                    ) : tripsNeeded > 1 ? (
+                      multiplyFeeByTrips ? (
+                        <span className="font-semibold text-red-700">
+                          รวม {tripsNeeded} เที่ยว (เที่ยวละ ฿{fmt(baseTripFee)})
+                        </span>
+                      ) : (
+                        <span>คิดเที่ยวละ ฿{fmt(baseTripFee)} (1 เที่ยว)</span>
+                      )
                     ) : calcResult.matchedTier ? (
                       <span className="font-semibold text-neutral-700">ตามตารางช่วง {calcResult.matchedTier.minKm}–{calcResult.matchedTier.maxKm} กม.</span>
                     ) : (

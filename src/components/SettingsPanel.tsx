@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
-import { AppSettings, Prices, Weights, SupplierProfile, SupplierLocation, DeliveryConfig, DistanceTier } from "../types";
-import { defaultSettings, defaultPrices, defaultCosts, defaultWeights, defaultSuppliers, defaultDistanceTiers, APP_VERSION } from "../data";
+import { AppSettings, Prices, Weights, SupplierProfile, SupplierLocation, DeliveryConfig, DistanceTier, SupplierTruck, MinOrderCriteriaType } from "../types";
+import { defaultSettings, defaultPrices, defaultCosts, defaultWeights, defaultSuppliers, defaultDistanceTiers, defaultSupplierTrucks, APP_VERSION } from "../data";
 import { fmt } from "../utils";
 import { parseGoogleMapsInput, isValidLatLng, PRESET_LOCATIONS, createGoogleMapsDirectionsUrl } from "../utils/geoUtils";
 import { PriceCostMarkupItem } from "./PriceCostMarkupCard";
@@ -109,6 +109,22 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     currentSupplier?.deliveryConfig?.minOrderFreeAmount ?? 0
   );
 
+  // Truck Fleet & Capacity States
+  const [availableTrucks, setAvailableTrucks] = useState<SupplierTruck[]>(() => {
+    return currentSupplier?.deliveryConfig?.availableTrucks && currentSupplier.deliveryConfig.availableTrucks.length > 0
+      ? currentSupplier.deliveryConfig.availableTrucks
+      : defaultSupplierTrucks;
+  });
+  const [minOrderCriteria, setMinOrderCriteria] = useState<MinOrderCriteriaType>(
+    currentSupplier?.deliveryConfig?.minOrderCriteria || "full_truckload_96"
+  );
+  const [fullLoadThresholdPercent, setFullLoadThresholdPercent] = useState<number>(
+    currentSupplier?.deliveryConfig?.fullLoadThresholdPercent ?? 96
+  );
+  const [minWeightKg, setMinWeightKg] = useState<number>(
+    currentSupplier?.deliveryConfig?.minWeightKg ?? 0
+  );
+
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
 
   // Sync inputs when selected supplier changes
@@ -136,6 +152,14 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       setRatePerKm(sup.deliveryConfig?.ratePerKm ?? 25);
       setBasePrice(sup.deliveryConfig?.basePrice ?? 0);
       setMinOrderFreeAmount(sup.deliveryConfig?.minOrderFreeAmount ?? 0);
+
+      const trucks = sup.deliveryConfig?.availableTrucks && sup.deliveryConfig.availableTrucks.length > 0
+        ? sup.deliveryConfig.availableTrucks
+        : defaultSupplierTrucks;
+      setAvailableTrucks(trucks);
+      setMinOrderCriteria(sup.deliveryConfig?.minOrderCriteria || "full_truckload_96");
+      setFullLoadThresholdPercent(sup.deliveryConfig?.fullLoadThresholdPercent ?? 96);
+      setMinWeightKg(sup.deliveryConfig?.minWeightKg ?? 0);
     }
   }, [selectedSupplierId]);
 
@@ -173,6 +197,10 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       ratePerKm: Number(ratePerKm) || 0,
       basePrice: Number(basePrice) || 0,
       minOrderFreeAmount: Number(minOrderFreeAmount) || 0,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg,
+      availableTrucks,
     };
 
     const updatedSuppliersList = currentSuppliers.map((s) => {
@@ -209,17 +237,25 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     }).catch(() => {});
   };
 
-  // Instant Delivery Tier Update Handler
-  const handleInstantDeliveryTierUpdate = (
+  // Comprehensive Instant Delivery Config Update Handler
+  const handleInstantDeliveryConfigUpdate = (
     nextTiers: DistanceTier[],
     nextExcessRate: number,
     nextMinOrder: number,
-    nextMode: "tiered" | "per_km" = "tiered"
+    nextMode: "tiered" | "per_km" = pricingMode,
+    nextTrucks: SupplierTruck[] = availableTrucks,
+    nextCriteria: MinOrderCriteriaType = minOrderCriteria,
+    nextThreshold: number = fullLoadThresholdPercent,
+    nextMinWeight: number = minWeightKg
   ) => {
     setDistanceTiers(nextTiers);
     setExcessRatePerKm(nextExcessRate);
     setMinOrderFreeAmount(nextMinOrder);
     setPricingMode(nextMode);
+    setAvailableTrucks(nextTrucks);
+    setMinOrderCriteria(nextCriteria);
+    setFullLoadThresholdPercent(nextThreshold);
+    setMinWeightKg(nextMinWeight);
 
     // Compute free radius from tier 0 if price is 0
     const freeTier = nextTiers.find((t) => t.price === 0);
@@ -242,6 +278,10 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       ratePerKm: nextExcessRate,
       basePrice: 0,
       minOrderFreeAmount: nextMinOrder,
+      minOrderCriteria: nextCriteria,
+      fullLoadThresholdPercent: nextThreshold,
+      minWeightKg: nextMinWeight,
+      availableTrucks: nextTrucks,
     };
 
     const updatedSuppliersList = currentSuppliers.map((s) => {
@@ -274,6 +314,120 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updatedSettings),
     }).catch(() => {});
+  };
+
+  // Instant Delivery Tier Update Handler (backward compatible)
+  const handleInstantDeliveryTierUpdate = (
+    nextTiers: DistanceTier[],
+    nextExcessRate: number,
+    nextMinOrder: number,
+    nextMode: "tiered" | "per_km" = "tiered"
+  ) => {
+    handleInstantDeliveryConfigUpdate(
+      nextTiers,
+      nextExcessRate,
+      nextMinOrder,
+      nextMode,
+      availableTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
+  };
+
+  // Toggle Truck Enabled status
+  const handleToggleTruck = (truckId: string) => {
+    const nextTrucks = availableTrucks.map((t) =>
+      t.id === truckId ? { ...t, enabled: !t.enabled } : t
+    );
+    handleInstantDeliveryConfigUpdate(
+      distanceTiers,
+      excessRatePerKm,
+      minOrderFreeAmount,
+      pricingMode,
+      nextTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
+  };
+
+  // Update Truck Capacity or Name
+  const handleUpdateTruck = (truckId: string, field: "name" | "capacityKg", val: any) => {
+    const nextTrucks = availableTrucks.map((t) => {
+      if (t.id === truckId) {
+        const updated = { ...t, [field]: val };
+        if (field === "capacityKg") {
+          const cap = Math.max(0, Number(val) || 0);
+          updated.capacityKg = cap;
+          updated.label = `${(cap / 1000).toFixed(1)} ตัน`;
+        }
+        return updated;
+      }
+      return t;
+    });
+    handleInstantDeliveryConfigUpdate(
+      distanceTiers,
+      excessRatePerKm,
+      minOrderFreeAmount,
+      pricingMode,
+      nextTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
+  };
+
+  // Add Custom Truck Type
+  const handleAddTruck = () => {
+    const newTruck: SupplierTruck = {
+      id: `truck_${Date.now()}`,
+      name: "รถบรรทุกสั่งทำพิเศษ",
+      capacityKg: 15000,
+      label: "15.0 ตัน",
+      enabled: true,
+    };
+    const nextTrucks = [...availableTrucks, newTruck];
+    handleInstantDeliveryConfigUpdate(
+      distanceTiers,
+      excessRatePerKm,
+      minOrderFreeAmount,
+      pricingMode,
+      nextTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
+  };
+
+  // Delete Truck Type
+  const handleDeleteTruck = (truckId: string) => {
+    if (availableTrucks.length <= 1) return;
+    const nextTrucks = availableTrucks.filter((t) => t.id !== truckId);
+    handleInstantDeliveryConfigUpdate(
+      distanceTiers,
+      excessRatePerKm,
+      minOrderFreeAmount,
+      pricingMode,
+      nextTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
+  };
+
+  // Reset Truck Fleet to Defaults
+  const handleResetTrucks = () => {
+    handleInstantDeliveryConfigUpdate(
+      distanceTiers,
+      excessRatePerKm,
+      minOrderFreeAmount,
+      pricingMode,
+      defaultSupplierTrucks,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg
+    );
   };
 
   // Add new tier with auto-calculated ranges
@@ -622,10 +776,17 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     };
 
     const updatedDeliveryConfig: DeliveryConfig = {
+      pricingMode,
+      distanceTiers,
+      excessRatePerKm,
       freeRadiusKm: Number(freeRadiusKm) || 0,
       ratePerKm: Number(ratePerKm) || 0,
       basePrice: Number(basePrice) || 0,
       minOrderFreeAmount: Number(minOrderFreeAmount) || 0,
+      minOrderCriteria,
+      fullLoadThresholdPercent,
+      minWeightKg,
+      availableTrucks,
     };
 
     const updatedSuppliersList = currentSuppliers.map((s) => {
@@ -1332,6 +1493,347 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                     </span>
                   </span>
                 )}
+              </div>
+            </div>
+
+            {/* 2.2 MINIMUM DELIVERY REQUIREMENT & 96% FULL TRUCKLOAD CRITERIA */}
+            <div className="mt-4 pt-4 border-t border-neutral-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-neutral-800 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>เกณฑ์ยอดสั่งซื้อขั้นต่ำที่จัดส่ง (Minimum Delivery Requirement)</span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-500">
+                    กำหนดเงื่อนไขการรับออเดอร์จัดส่งของซัพพลายเออร์นี้ เช่น เต็มเที่ยวขนส่ง (≥96%), ตามน้ำหนัก หรือตามยอดเงิน
+                  </p>
+                </div>
+              </div>
+
+              {/* Criteria Selector Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {/* 1. Full Truckload 96% */}
+                <button
+                  type="button"
+                  onClick={() => handleInstantDeliveryConfigUpdate(
+                    distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                    availableTrucks, "full_truckload_96", fullLoadThresholdPercent, minWeightKg
+                  )}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    minOrderCriteria === "full_truckload_96"
+                      ? "bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-neutral-800">
+                      <Truck size={14} className={minOrderCriteria === "full_truckload_96" ? "text-emerald-700" : "text-neutral-500"} />
+                      <span>เต็มเที่ยวขนส่ง (Full Load)</span>
+                    </div>
+                    {minOrderCriteria === "full_truckload_96" && (
+                      <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        เลือกอยู่
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-neutral-500 leading-tight">
+                    ต้องได้น้ำหนักอย่างน้อย <strong className="text-emerald-800 font-bold">{fullLoadThresholdPercent}%</strong> ของพิกัดรถแต่ละประเภท
+                  </p>
+                </button>
+
+                {/* 2. Minimum Weight */}
+                <button
+                  type="button"
+                  onClick={() => handleInstantDeliveryConfigUpdate(
+                    distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                    availableTrucks, "min_weight", fullLoadThresholdPercent, minWeightKg || 12000
+                  )}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    minOrderCriteria === "min_weight"
+                      ? "bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-neutral-800">
+                      <Scale size={14} className={minOrderCriteria === "min_weight" ? "text-emerald-700" : "text-neutral-500"} />
+                      <span>น้ำหนักรวมขั้นต่ำ</span>
+                    </div>
+                    {minOrderCriteria === "min_weight" && (
+                      <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        เลือกอยู่
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-neutral-500 leading-tight">
+                    กำหนดน้ำหนักรวมตายตัว เช่น ขั้นต่ำ {fmt(minWeightKg || 12000)} กก.
+                  </p>
+                </button>
+
+                {/* 3. Minimum Amount */}
+                <button
+                  type="button"
+                  onClick={() => handleInstantDeliveryConfigUpdate(
+                    distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                    availableTrucks, "min_amount", fullLoadThresholdPercent, minWeightKg
+                  )}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    minOrderCriteria === "min_amount"
+                      ? "bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-neutral-800">
+                      <DollarSign size={14} className={minOrderCriteria === "min_amount" ? "text-emerald-700" : "text-neutral-500"} />
+                      <span>ยอดสั่งซื้อขั้นต่ำ</span>
+                    </div>
+                    {minOrderCriteria === "min_amount" && (
+                      <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        เลือกอยู่
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-neutral-500 leading-tight">
+                    กำหนดยอดเงินสั่งซื้อรวม เช่น ฿{fmt(minOrderFreeAmount || 50000)} บาท
+                  </p>
+                </button>
+
+                {/* 4. No Minimum / None */}
+                <button
+                  type="button"
+                  onClick={() => handleInstantDeliveryConfigUpdate(
+                    distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                    availableTrucks, "none", fullLoadThresholdPercent, minWeightKg
+                  )}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    minOrderCriteria === "none"
+                      ? "bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
+                      : "bg-white border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-neutral-800">
+                      <CheckCircle2 size={14} className={minOrderCriteria === "none" ? "text-emerald-700" : "text-neutral-500"} />
+                      <span>ไม่จำกัดเกณฑ์ขั้นต่ำ</span>
+                    </div>
+                    {minOrderCriteria === "none" && (
+                      <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        เลือกอยู่
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-neutral-500 leading-tight">
+                    จัดส่งทุกขนาดออเดอร์ตามตารางอัตราค่าส่งระยะทางปกติ
+                  </p>
+                </button>
+              </div>
+
+              {/* Threshold Detail Config Sub-bar */}
+              {minOrderCriteria === "full_truckload_96" && (
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                      <span>🎯 เปอร์เซ็นต์เกณฑ์เต็มเที่ยวขนส่ง:</span>
+                      <span className="bg-emerald-600 text-white font-mono font-bold px-2 py-0.5 rounded-md">
+                        {fullLoadThresholdPercent}%
+                      </span>
+                    </span>
+                    <p className="text-[10px] text-emerald-800">
+                      ออเดอร์จะต้องมีน้ำหนักอย่างน้อย {fullLoadThresholdPercent}% ของพิกัดประเภทรถที่เลือก จึงจะถือว่าเต็มเที่ยวและคุ้มค่าจัดส่ง
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-semibold text-emerald-900">ปรับเกณฑ์ %:</span>
+                    <input
+                      type="number"
+                      min="50"
+                      max="100"
+                      value={fullLoadThresholdPercent}
+                      onChange={(e) => {
+                        const val = Math.min(100, Math.max(1, parseFloat(e.target.value) || 96));
+                        handleInstantDeliveryConfigUpdate(
+                          distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                          availableTrucks, minOrderCriteria, val, minWeightKg
+                        );
+                      }}
+                      className="w-16 bg-white border border-emerald-400 rounded-lg px-2 py-1 text-xs font-mono font-bold text-center text-emerald-950 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    />
+                    <span className="font-bold text-emerald-900">%</span>
+
+                    {/* Quick percentage buttons */}
+                    <div className="flex gap-1">
+                      {[90, 95, 96, 100].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => handleInstantDeliveryConfigUpdate(
+                            distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                            availableTrucks, minOrderCriteria, pct, minWeightKg
+                          )}
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-bold transition ${
+                            fullLoadThresholdPercent === pct
+                              ? "bg-emerald-700 text-white"
+                              : "bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {minOrderCriteria === "min_weight" && (
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-emerald-950">
+                      ⚖️ น้ำหนักรวมขั้นต่ำที่เปิดรับจัดส่ง:
+                    </span>
+                    <p className="text-[10px] text-emerald-800">
+                      ออเดอร์ที่น้ำหนักน้อยกว่านี้จะไม่เข้าเกณฑ์จัดส่งตรง
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="number"
+                      min="0"
+                      step="500"
+                      value={minWeightKg}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseFloat(e.target.value) || 0);
+                        handleInstantDeliveryConfigUpdate(
+                          distanceTiers, excessRatePerKm, minOrderFreeAmount, pricingMode,
+                          availableTrucks, minOrderCriteria, fullLoadThresholdPercent, val
+                        );
+                      }}
+                      className="w-28 bg-white border border-emerald-400 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-right text-emerald-950 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      placeholder="12000"
+                    />
+                    <span className="font-bold text-emerald-900">กก. ({((minWeightKg || 0) / 1000).toFixed(1)} ตัน)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2.3 SUPPLIER TRUCK FLEET & WEIGHT CAPACITIES */}
+            <div className="mt-4 pt-4 border-t border-neutral-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-neutral-800 flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-[#C62828]" />
+                    <span>กองรถขนส่ง & พิกัดน้ำหนักบรรทุกของ {supplierName}</span>
+                    <span className="text-[10px] font-bold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full border border-neutral-200">
+                      เปิดใช้ {availableTrucks.filter(t => t.enabled).length}/{availableTrucks.length} คัน
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-500">
+                    ติ๊กเลือก [✓] ประเภทรถที่ซัพพลายเออร์นี้มีให้บริการ และระบุน้ำหนักบรรทุกปลอดภัย (กก./ตัน) เพื่อใช้คำนวณเกณฑ์เต็มเที่ยว
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleAddTruck}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 px-2.5 py-1 rounded-lg transition"
+                  >
+                    <Plus size={12} />
+                    <span>เพิ่มประเภทรถ</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetTrucks}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-neutral-500 hover:text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 px-2.5 py-1 rounded-lg transition"
+                    title="คืนค่ากองรถมาตรฐาน"
+                  >
+                    <RotateCcw size={12} />
+                    <span>คืนค่ามาตรฐาน</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Truck Fleet Cards List */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                {availableTrucks.map((truck, idx) => {
+                  const target96 = Math.round(truck.capacityKg * (fullLoadThresholdPercent / 100));
+                  return (
+                    <div
+                      key={truck.id || idx}
+                      className={`p-3 rounded-xl border transition-all flex flex-col justify-between gap-2.5 ${
+                        truck.enabled
+                          ? "bg-white border-neutral-300 shadow-xs hover:border-neutral-400"
+                          : "bg-neutral-50/80 border-neutral-200 opacity-60 hover:opacity-90"
+                      }`}
+                    >
+                      {/* Top Row: Checkbox, Truck Name input, Delete button */}
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={truck.enabled}
+                            onChange={() => handleToggleTruck(truck.id)}
+                            className="w-4 h-4 text-emerald-600 rounded border-neutral-300 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <span className={`text-xs font-bold ${truck.enabled ? "text-neutral-900" : "text-neutral-500 line-through"}`}>
+                            {truck.enabled ? "เปิดให้บริการ" : "ไม่รองรับ"}
+                          </span>
+                        </label>
+
+                        {availableTrucks.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTruck(truck.id)}
+                            className="text-neutral-400 hover:text-red-600 p-1 rounded transition"
+                            title="ลบรถประเภทนี้"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Middle Row: Name and Capacity inputs */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                        <div className="sm:col-span-7">
+                          <input
+                            type="text"
+                            value={truck.name}
+                            onChange={(e) => handleUpdateTruck(truck.id, "name", e.target.value)}
+                            disabled={!truck.enabled}
+                            className="w-full bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1 text-xs font-bold text-neutral-800 focus:bg-white focus:ring-1 focus:ring-neutral-400 outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+                            placeholder="ชื่อประเภทรถ"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-5 flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="500"
+                            value={truck.capacityKg}
+                            onChange={(e) => handleUpdateTruck(truck.id, "capacityKg", parseFloat(e.target.value) || 0)}
+                            disabled={!truck.enabled}
+                            className="w-full bg-neutral-50 border border-neutral-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-right text-neutral-800 focus:bg-white focus:ring-1 focus:ring-neutral-400 outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+                            placeholder="7500"
+                          />
+                          <span className="text-[11px] font-semibold text-neutral-600 shrink-0">กก.</span>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: 96% Full Load Target indicator */}
+                      <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-neutral-150/70 text-neutral-500">
+                        <span className="font-mono text-neutral-700 font-semibold">
+                          พิกัด: {(truck.capacityKg / 1000).toFixed(1)} ตัน
+                        </span>
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">
+                          🎯 เกณฑ์เต็มเที่ยว {fullLoadThresholdPercent}% = {fmt(target96)} กก. ({(target96 / 1000).toFixed(1)} ตัน)
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

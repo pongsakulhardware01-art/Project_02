@@ -148,14 +148,28 @@ export interface DistanceTier {
   price: number; // ค่าจัดส่ง (บาท) เช่น 0, 3000, 4500
 }
 
+export interface SupplierTruck {
+  id: string;
+  name: string; // เช่น "รถบรรทุก 6 ล้อ", "รถบรรทุก 10 ล้อ"
+  capacityKg: number; // น้ำหนักบรรทุกสูงสุด (กก.) เช่น 7500, 13500
+  enabled: boolean; // มีรถประเภทนี้หรือไม่ (ติ๊กเลือก)
+  label?: string; // เช่น "7.5 ตัน"
+}
+
+export type MinOrderCriteriaType = "full_truckload_96" | "min_weight" | "min_amount" | "none";
+
 export interface DeliveryConfig {
   freeRadiusKm?: number; // ระยะทางส่งฟรี (กม.) (backward compatibility)
   ratePerKm?: number; // ค่าขนส่งต่อกิโลเมตรส่วนเกิน (บาท/กม.)
   basePrice?: number; // ค่าขนส่งเริ่มต้น / ค่าตั้งต้น (บาท)
   minOrderFreeAmount?: number; // ยอดสั่งซื้อขั้นต่ำที่ส่งฟรี (ถ้ามี)
+  minWeightKg?: number; // น้ำหนักสั่งซื้อขั้นต่ำ (กก.) เช่น 12000
+  fullLoadThresholdPercent?: number; // เกณฑ์เต็มเที่ยว เช่น 96 (%) ของพิกัดรถ
+  minOrderCriteria?: MinOrderCriteriaType; // เกณฑ์ขั้นต่ำในการจัดส่ง: เต็มเที่ยว 96% / น้ำหนัก / ยอดเงิน / ไม่จำกัด
   pricingMode?: "tiered" | "per_km"; // โหมดการคิดราคา: "tiered" หรือ "per_km"
   distanceTiers?: DistanceTier[]; // รายการช่วงระยะทางที่ผู้ใช้กำหนด
   excessRatePerKm?: number; // คิดเพิ่มต่อกิโลเมตรเมื่อเกินช่วงสูงสุด (บาท/กม.)
+  availableTrucks?: SupplierTruck[]; // รายการรถและพิกัดน้ำหนักที่ซัพพลายเออร์มีให้บริการ
 }
 
 export interface SupplierProfile {

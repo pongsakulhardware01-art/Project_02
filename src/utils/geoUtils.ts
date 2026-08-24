@@ -1,10 +1,48 @@
-import { SupplierProfile, DistanceTier } from "../types";
+import { SupplierProfile, DistanceTier, SupplierTruck, MinOrderCriteriaType } from "../types";
 
 export interface GeoLocation {
   lat: number;
   lng: number;
   address?: string;
   name?: string;
+}
+
+export interface TripDetail {
+  tripNumber: number;
+  weightKg: number;
+  maxCapacityKg: number;
+  loadPercent: number;
+  isFullLoad: boolean;
+}
+
+export interface TruckTripOption {
+  truckId: string;
+  truckName: string;
+  capacityKg: number;
+  tripsNeeded: number;
+  isCurrent: boolean;
+  canFitSingleTrip: boolean;
+  isLargerSingleTripAlt: boolean;
+}
+
+export interface FullLoadEvaluation {
+  isFullLoad: boolean; // เข้าเกณฑ์เต็มเที่ยว (≥ 96% หรือตามที่กำหนด)
+  currentWeightKg: number;
+  truckName: string;
+  truckCapacityKg: number;
+  capacityKg: number;
+  thresholdPercent: number; // เช่น 96%
+  requiredMinWeightKg: number; // น้ำหนักขั้นต่ำที่ต้องถึง เช่น 96% * capacityKg
+  targetWeightKg: number;
+  percentLoaded: number; // % บรรทุกจริงของคันแรก หรือเทียบกับพิกัด 1 คัน
+  loadPercent: number;
+  missingWeightKg: number; // ขาดอีกกี่ กก. ถึงจะเต็มเที่ยว (กรณีไม่เกิน 100%)
+  tripsNeeded: number; // จำนวนเที่ยว/คันที่ต้องใช้สำหรับรถประเภทนี้
+  tripDetails: TripDetail[]; // รายละเอียดน้ำหนักในแต่ละเที่ยว
+  truckTripOptions: TruckTripOption[]; // เปรียบเทียบจำนวนคัน/เที่ยวกับรถทุกประเภทในกองรถ
+  singleTripAlternative?: TruckTripOption; // รถขนาดใหญ่กว่าที่สามารถจบงานได้ใน 1 เที่ยว
+  statusMessage: string;
+  detailMessage: string;
 }
 
 export interface DeliveryCalculationResult {
@@ -23,6 +61,10 @@ export interface DeliveryCalculationResult {
   distanceTiers?: DistanceTier[];
   directionsUrl: string;
   reason: string;
+  availableTrucks?: SupplierTruck[];
+  minOrderCriteria?: MinOrderCriteriaType;
+  fullLoadThresholdPercent?: number;
+  fullLoadStatus?: FullLoadEvaluation;
 }
 
 // Extensive Preset Popular Construction, Industrial Estates & Hub Locations in Thailand for Instant Resolution
@@ -338,7 +380,9 @@ export function calculateSupplierDelivery(
   destLng?: number,
   destAddress?: string,
   destName?: string,
-  orderTotalAmount?: number
+  orderTotalAmount?: number,
+  orderTotalWeightKg?: number,
+  selectedTruckId?: string
 ): DeliveryCalculationResult | null {
   // Origin coordinates from supplier profile
   const originLat = supplier.supplierLocation?.lat || 13.5475;
@@ -366,7 +410,118 @@ export function calculateSupplierDelivery(
     ratePerKm: 25,
     basePrice: 0,
     minOrderFreeAmount: 0,
+    minOrderCriteria: "full_truckload_96",
+    fullLoadThresholdPercent: 96,
+    minWeightKg: 0,
   };
+
+  const minOrderCriteria = deliveryConfig.minOrderCriteria || "full_truckload_96";
+  const fullLoadPercent = deliveryConfig.fullLoadThresholdPercent ?? 96;
+  const availableTrucks: SupplierTruck[] = (deliveryConfig.availableTrucks && deliveryConfig.availableTrucks.length > 0)
+    ? deliveryConfig.availableTrucks
+    : [
+        { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7500, label: "7.5 ตัน", enabled: true },
+        { id: "truck_10w", name: "รถบรรทุก 10 ล้อ", capacityKg: 13500, label: "13.5 ตัน", enabled: true },
+        { id: "truck_12w", name: "รถบรรทุก 12 ล้อ", capacityKg: 16500, label: "16.5 ตัน", enabled: true },
+        { id: "truck_trailer", name: "รถเทเลอร์", capacityKg: 25000, label: "25.0 ตัน", enabled: true },
+        { id: "truck_semi", name: "รถพ่วง", capacityKg: 31000, label: "31.0 ตัน", enabled: true },
+      ];
+
+  // Evaluate full load status if weight is provided
+  let fullLoadStatus: FullLoadEvaluation | undefined = undefined;
+  if (orderTotalWeightKg !== undefined && orderTotalWeightKg > 0) {
+    const enabledTrucks = availableTrucks.filter((t) => t.enabled);
+    const activeFleet = enabledTrucks.length > 0 ? enabledTrucks : availableTrucks;
+    
+    let chosenTruck = selectedTruckId 
+      ? activeFleet.find((t) => t.id === selectedTruckId) 
+      : undefined;
+
+    if (!chosenTruck) {
+      // Find smallest enabled truck that fits or largest available
+      chosenTruck = activeFleet.find((t) => t.capacityKg >= orderTotalWeightKg) || activeFleet[activeFleet.length - 1];
+    }
+
+    if (chosenTruck) {
+      const thresholdFactor = fullLoadPercent / 100;
+      const requiredMinWeightKg = Math.round(chosenTruck.capacityKg * thresholdFactor);
+      const isFullLoad = orderTotalWeightKg >= requiredMinWeightKg && orderTotalWeightKg <= chosenTruck.capacityKg;
+      const percentLoaded = Math.round((orderTotalWeightKg / chosenTruck.capacityKg) * 100);
+      const missingWeightKg = Math.max(0, requiredMinWeightKg - orderTotalWeightKg);
+      
+      // Calculate trips / vehicles needed for this chosen truck type
+      const tripsNeeded = Math.max(1, Math.ceil(orderTotalWeightKg / chosenTruck.capacityKg));
+
+      // Calculate weight distribution across trips
+      const tripDetails: TripDetail[] = [];
+      let remainingWeight = orderTotalWeightKg;
+      for (let i = 1; i <= tripsNeeded; i++) {
+        const tripWeight = Math.min(remainingWeight, chosenTruck.capacityKg);
+        const tripLoadPct = Math.round((tripWeight / chosenTruck.capacityKg) * 100);
+        tripDetails.push({
+          tripNumber: i,
+          weightKg: tripWeight,
+          maxCapacityKg: chosenTruck.capacityKg,
+          loadPercent: tripLoadPct,
+          isFullLoad: tripWeight >= Math.round(chosenTruck.capacityKg * thresholdFactor),
+        });
+        remainingWeight -= tripWeight;
+      }
+
+      // Comparison across all trucks in active fleet
+      const truckTripOptions: TruckTripOption[] = activeFleet.map((t) => {
+        const tTrips = Math.max(1, Math.ceil(orderTotalWeightKg / t.capacityKg));
+        return {
+          truckId: t.id,
+          truckName: t.name,
+          capacityKg: t.capacityKg,
+          tripsNeeded: tTrips,
+          isCurrent: t.id === chosenTruck?.id,
+          canFitSingleTrip: orderTotalWeightKg <= t.capacityKg,
+          isLargerSingleTripAlt: orderTotalWeightKg <= t.capacityKg && t.capacityKg > (chosenTruck?.capacityKg || 0),
+        };
+      });
+
+      // Find the best alternative truck that can deliver everything in 1 trip
+      const singleTripAlternative = truckTripOptions.find(
+        (opt) => opt.isLargerSingleTripAlt && opt.canFitSingleTrip
+      );
+
+      let statusMessage = "";
+      let detailMessage = "";
+
+      if (percentLoaded > 100) {
+        statusMessage = `น้ำหนักเกินพิกัด 1 คัน (${percentLoaded}%) → ต้องใช้ทั้งหมด ${tripsNeeded} คัน (${tripsNeeded} เที่ยว)`;
+        detailMessage = `น้ำหนักรวม ${orderTotalWeightKg.toLocaleString()} กก. เกินพิกัด 1 คัน (${chosenTruck.capacityKg.toLocaleString()} กก.) ของ${chosenTruck.name} โดยต้องจัดส่ง ${tripsNeeded} คัน (เที่ยวละไม่เกิน ${chosenTruck.capacityKg.toLocaleString()} กก.)`;
+      } else if (orderTotalWeightKg >= requiredMinWeightKg) {
+        statusMessage = `เข้าเกณฑ์เต็มเที่ยวแล้ว (${percentLoaded}% ≥ ${fullLoadPercent}%) → ใช้ 1 คัน (1 เที่ยว)`;
+        detailMessage = `ได้ระวางคุ้มค่าพร้อมจัดส่งสำหรับ ${chosenTruck.name} 1 คัน (เกณฑ์ ${fullLoadPercent}% = ${requiredMinWeightKg.toLocaleString()} กก.)`;
+      } else {
+        statusMessage = `ยังไม่เต็มเที่ยว (${percentLoaded}% / ${fullLoadPercent}%) → ใช้ 1 คัน`;
+        detailMessage = `ยังขาดอีก ${missingWeightKg.toLocaleString()} กก. จึงจะถึงเกณฑ์เต็มเที่ยว ${fullLoadPercent}% ของ ${chosenTruck.name}`;
+      }
+
+      fullLoadStatus = {
+        isFullLoad,
+        currentWeightKg: orderTotalWeightKg,
+        truckName: chosenTruck.name,
+        truckCapacityKg: chosenTruck.capacityKg,
+        capacityKg: chosenTruck.capacityKg,
+        thresholdPercent: fullLoadPercent,
+        requiredMinWeightKg,
+        targetWeightKg: requiredMinWeightKg,
+        percentLoaded,
+        loadPercent: percentLoaded,
+        missingWeightKg,
+        tripsNeeded,
+        tripDetails,
+        truckTripOptions,
+        singleTripAlternative,
+        statusMessage,
+        detailMessage,
+      };
+    }
+  }
 
   const minOrderFree = deliveryConfig.minOrderFreeAmount ?? 0;
   const isOrderAmountFree = minOrderFree > 0 && orderTotalAmount !== undefined && orderTotalAmount >= minOrderFree;
@@ -477,5 +632,9 @@ export function calculateSupplierDelivery(
     distanceTiers: deliveryConfig.distanceTiers,
     directionsUrl,
     reason,
+    availableTrucks,
+    minOrderCriteria,
+    fullLoadThresholdPercent: fullLoadPercent,
+    fullLoadStatus,
   };
 }
