@@ -1155,18 +1155,18 @@ export default function UniversalBatchCalculator({
 
             {/* Main Spreadsheet Scroll Container */}
             <div className="overflow-x-auto w-full border border-neutral-200/80 rounded-2xl shadow-sm bg-white">
-              <table className="w-full text-left border-collapse min-w-[1140px]">
+              <table className="w-full text-left border-collapse min-w-[980px]">
                 <thead>
                   <tr className="bg-neutral-50/75 border-b border-neutral-200 text-xs font-bold text-neutral-600 uppercase tracking-wide">
-                    <th className="py-3.5 px-3.5 w-[150px] min-w-[145px] font-semibold">หมวดหมู่สินค้า</th>
-                    <th className="py-3.5 px-3.5 min-w-[240px] w-[250px] font-semibold">รุ่นโมเดล & ตราสินค้า</th>
-                    <th className="py-3.5 px-2.5 w-[75px] min-w-[70px] text-center font-semibold">ยาว (ม.)</th>
-                    <th className="py-3.5 px-2.5 w-[70px] min-w-[65px] text-center font-semibold">จำนวน</th>
-                    <th className="py-3.5 px-3.5 min-w-[160px] w-[170px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
-                    <th className="py-3.5 px-3 w-[125px] min-w-[120px] text-center font-semibold">น้ำหนัก/ม. (กก.)</th>
-                    <th className="py-3.5 px-3 w-[120px] min-w-[115px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
-                    <th className="py-3.5 px-3.5 min-w-[145px] w-[150px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
-                    <th className="py-3.5 px-2.5 w-[45px] text-center"></th>
+                    <th className="py-3.5 px-3 w-[14%] min-w-[130px] font-semibold">หมวดหมู่สินค้า</th>
+                    <th className="py-3.5 px-3 w-[24%] min-w-[210px] font-semibold">รุ่นโมเดล & ตราสินค้า</th>
+                    <th className="py-3.5 px-2 w-[7%] min-w-[65px] text-center font-semibold">ยาว (ม.)</th>
+                    <th className="py-3.5 px-2 w-[7%] min-w-[60px] text-center font-semibold">จำนวน</th>
+                    <th className="py-3.5 px-3 w-[15%] min-w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
+                    <th className="py-3.5 px-2 w-[10%] min-w-[105px] text-center font-semibold">น้ำหนัก/ม. (กก.)</th>
+                    <th className="py-3.5 px-2 w-[10%] min-w-[105px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
+                    <th className="py-3.5 px-3 w-[13%] min-w-[135px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
+                    <th className="py-3.5 px-2 w-[40px] text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 text-xs">
@@ -1184,11 +1184,11 @@ export default function UniversalBatchCalculator({
                     calculatedRows.map((row) => (
                       <tr key={row.id} className="hover:bg-neutral-50/60 transition-all duration-150">
                         {/* Category Select cells */}
-                        <td className="py-3 px-3.5">
+                        <td className="py-3 px-3">
                           <select
                             value={row.category}
                             onChange={(e) => editLineItem(row.id, "category", e.target.value)}
-                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold text-xs w-full min-w-[140px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                           >
                             <option value="slab">แผ่นพื้นสำเร็จ</option>
                             <option value="pile">เสาเข็ม / รั้ว</option>
@@ -1198,12 +1198,12 @@ export default function UniversalBatchCalculator({
                         </td>
 
                         {/* Model select dynamically depending on category */}
-                        <td className="py-3 px-3.5">
+                        <td className="py-3 px-3">
                           {row.category === "slab" && (
                             <select
                               value={row.model}
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full min-w-[230px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
                               <option value="normal">แผ่นพื้นสำเร็จธรรมดา</option>
                               <option value="m.o.c">แผ่นพื้นสำเร็จ มอก. (TIS)</option>
@@ -1214,7 +1214,7 @@ export default function UniversalBatchCalculator({
                             <select
                               value={row.model}
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full min-w-[230px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
                               <optgroup label="เสาเข็มไอ">
                                 <option value="i15">เสาเข็มไอ I-15</option>
@@ -1242,7 +1242,7 @@ export default function UniversalBatchCalculator({
                           )}
 
                           {row.category === "hollow_core" && (
-                            <span className="p-2 bg-neutral-50 border border-neutral-100 rounded-xl text-neutral-600 font-medium text-xs block text-center min-w-[230px]">
+                            <span className="p-2 bg-neutral-50 border border-neutral-100 rounded-xl text-neutral-600 font-medium text-xs block text-center w-full">
                               แผ่นพื้นรูกลม Hollow Core (HC)
                             </span>
                           )}
@@ -1251,7 +1251,7 @@ export default function UniversalBatchCalculator({
                             <select
                               value={row.model}
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
-                              className="p-2 bg-[#FAF7F6] hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full min-w-[230px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-[#FAF7F6] hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
                               <optgroup label="ท่อระบายน้ำ คสล.">
                                 <option value="pipe030">ท่อระบายน้ำ Ø 0.30 ม.</option>
@@ -1277,35 +1277,35 @@ export default function UniversalBatchCalculator({
                         </td>
 
                         {/* Length meter inputs */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-2">
                           <input
                             type="number"
                             value={row.length}
                             onChange={(e) => editLineItem(row.id, "length", e.target.value === "" ? "" : parseFloat(e.target.value))}
                             step="0.1"
                             placeholder="ยาว"
-                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full min-w-[75px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                           />
                         </td>
 
                         {/* Count items */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-2">
                           <input
                             type="number"
                             value={row.count}
                             onChange={(e) => editLineItem(row.id, "count", e.target.value === "" ? "" : parseInt(e.target.value, 10))}
                             placeholder="จำนวน"
-                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full min-w-[75px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                           />
                         </td>
 
                         {/* Contextual parameters depending on categories */}
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3">
                           {row.category === "slab" && (
                             <select
                               value={row.wireCount}
                               onChange={(e) => editLineItem(row.id, "wireCount", e.target.value)}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl text-xs w-full min-w-[124px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
                               <option value="auto">คำนวณลวดอัตโนมัติ 🪄</option>
                               <option value="4">ลวด 4 เส้น</option>
@@ -1317,7 +1317,7 @@ export default function UniversalBatchCalculator({
                           )}
 
                           {row.category === "pile" && (["i18", "i22", "i26", "i30", "i35", "i40", "s18", "s22", "s26", "s30", "s35", "s40"].includes(row.model)) && (
-                            <div className="flex gap-1 min-w-[124px]">
+                            <div className="flex gap-1 w-full">
                               {row.model.startsWith("i") && (
                                 <select
                                   value={row.tisStandard}
@@ -1343,7 +1343,7 @@ export default function UniversalBatchCalculator({
                             <select
                               value={row.hcWidth}
                               onChange={(e) => editLineItem(row.id, "hcWidth", parseFloat(e.target.value))}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl text-xs w-full min-w-[124px] transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
                               <option value={0.35}>กว้าง 0.35 ม.</option>
                               <option value={0.60}>กว้าง 0.60 ม.</option>
@@ -1352,7 +1352,7 @@ export default function UniversalBatchCalculator({
                           )}
 
                           {row.category === "drainage" && (
-                            <div className="min-w-[124px]">
+                            <div className="w-full">
                               {row.model.startsWith("pipe") ? (
                                 <select
                                   value={row.tisStandard || "no_tis"}
@@ -1373,15 +1373,15 @@ export default function UniversalBatchCalculator({
 
                           {/* Fallback space for others */}
                           {row.category === "pile" && !["i18", "i22", "i26", "i30", "i35", "i40", "s18", "s22", "s26", "s30", "s35", "s40"].includes(row.model) && (
-                            <span className="text-xs text-neutral-400 font-mono text-center block min-w-[124px]">
+                            <span className="text-xs text-neutral-400 font-mono text-center block w-full">
                               ริ้วปกติ
                             </span>
                           )}
                         </td>
 
                         {/* นน.ต่อเมตร (กก./ม.) */}
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center gap-1 justify-center w-full min-w-[120px]">
+                        <td className="py-3 px-2 text-center">
+                          <div className="flex items-center gap-1 justify-center w-full">
                             <input
                               type="number"
                               value={row.customWeightPerMeter ?? ""}
@@ -1395,8 +1395,8 @@ export default function UniversalBatchCalculator({
                         </td>
 
                         {/* ราคาตั้ง (ต่อ ตร.ม. หรือเมตร) */}
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center gap-1 justify-center w-full min-w-[110px]">
+                        <td className="py-3 px-2 text-center">
+                          <div className="flex items-center gap-1 justify-center w-full">
                             <input
                               type="number"
                               value={row.customStandardRate ?? ""}
@@ -1410,8 +1410,8 @@ export default function UniversalBatchCalculator({
                         </td>
 
                         {/* ราคาต่อชิ้น */}
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center gap-1.5 justify-center w-full min-w-[130px]">
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center gap-1.5 justify-center w-full">
                             <input
                               type="number"
                               value={row.customPrice}
@@ -1423,7 +1423,7 @@ export default function UniversalBatchCalculator({
                             <button
                               type="button"
                               onClick={() => handleCopyPrice(row.id, row.computedUnitPrice)}
-                              className={`p-2 rounded-xl border transition-all duration-150 flex items-center justify-center cursor-pointer ${
+                              className={`p-2 shrink-0 rounded-xl border transition-all duration-150 flex items-center justify-center cursor-pointer ${
                                 copiedItemId === row.id
                                   ? "bg-emerald-50 border-emerald-250 text-emerald-600 scale-105"
                                   : "bg-neutral-50 hover:bg-neutral-100 border-neutral-200 text-neutral-400 hover:text-[#C62828]"
@@ -1436,7 +1436,7 @@ export default function UniversalBatchCalculator({
                         </td>
 
                         {/* Trash */}
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-3 px-2 text-center">
                           <button
                             onClick={() => deleteLineItem(row.id)}
                             className="p-2 text-neutral-400 hover:text-red-650 hover:bg-red-50 rounded-xl transition"
