@@ -13,6 +13,36 @@ export interface TripDetail {
   maxCapacityKg: number;
   loadPercent: number;
   isFullLoad: boolean;
+  truckId?: string;
+  truckName?: string;
+}
+
+export interface FleetPlanTrip {
+  tripNumber: number;
+  truckId: string;
+  truckName: string;
+  capacityKg: number;
+  allocatedWeightKg: number;
+  loadPercent: number;
+  remainingKg: number;
+  isFullLoad: boolean;
+}
+
+export interface FleetRecommendationPlan {
+  id: string;
+  type: "best_mixed" | "single_type" | "single_trip_upgrade" | "custom";
+  title: string;
+  badge: string;
+  badgeColor: "emerald" | "amber" | "blue" | "purple" | "neutral";
+  isRecommended?: boolean;
+  isCurrent?: boolean;
+  totalTrips: number;
+  totalCapacityKg: number;
+  avgUtilizationPct: number;
+  emptyCapacityKg: number;
+  trips: FleetPlanTrip[];
+  summary: string;
+  savingsHighlights?: string;
 }
 
 export interface TruckTripOption {
@@ -41,6 +71,8 @@ export interface FullLoadEvaluation {
   tripDetails: TripDetail[]; // รายละเอียดน้ำหนักในแต่ละเที่ยว
   truckTripOptions: TruckTripOption[]; // เปรียบเทียบจำนวนคัน/เที่ยวกับรถทุกประเภทในกองรถ
   singleTripAlternative?: TruckTripOption; // รถขนาดใหญ่กว่าที่สามารถจบงานได้ใน 1 เที่ยว
+  fleetRecommendationPlans?: FleetRecommendationPlan[]; // รายการแผนจัดชุดรถแนะนำเปรียบเทียบความคุ้มค่า
+  bestValuePlan?: FleetRecommendationPlan; // แผนผสมที่ระวางแน่นและคุ้มค่าที่สุด
   statusMessage: string;
   detailMessage: string;
 }
@@ -501,6 +533,152 @@ export function calculateSupplierDelivery(
         detailMessage = `ยังขาดอีก ${missingWeightKg.toLocaleString()} กก. จึงจะถึงเกณฑ์เต็มเที่ยว ${fullLoadPercent}% ของ ${chosenTruck.name}`;
       }
 
+      // Generate Smart Fleet Recommendation Plans
+      const fleetRecommendationPlans: FleetRecommendationPlan[] = [];
+
+      // 1. Uniform Fleet Options for each truck in activeFleet
+      const sortedFleetDesc = [...activeFleet].sort((a, b) => b.capacityKg - a.capacityKg);
+      const sortedFleetAsc = [...activeFleet].sort((a, b) => a.capacityKg - b.capacityKg);
+
+      // 2. Best Mixed Fleet Plan (Pack largest truck first, then size down the last truck to minimize empty space)
+      const mixedTrips: FleetPlanTrip[] = [];
+      let remWeightMixed = orderTotalWeightKg;
+      let tripCount = 1;
+
+      while (remWeightMixed > 0 && tripCount <= 20) {
+        // If remaining weight is small enough to fit in a smaller truck, pick the smallest truck that can hold it
+        let bestTruckForRem = sortedFleetAsc.find(t => t.capacityKg >= remWeightMixed);
+        if (!bestTruckForRem) {
+          // If larger than any truck, use the largest truck
+          bestTruckForRem = sortedFleetDesc[0];
+        }
+
+        const allocWeight = Math.min(remWeightMixed, bestTruckForRem.capacityKg);
+        const loadPct = Math.round((allocWeight / bestTruckForRem.capacityKg) * 100);
+        const isFull = allocWeight >= Math.round(bestTruckForRem.capacityKg * thresholdFactor);
+        const remCap = Math.max(0, bestTruckForRem.capacityKg - allocWeight);
+
+        mixedTrips.push({
+          tripNumber: tripCount,
+          truckId: bestTruckForRem.id,
+          truckName: bestTruckForRem.name,
+          capacityKg: bestTruckForRem.capacityKg,
+          allocatedWeightKg: allocWeight,
+          loadPercent: loadPct,
+          remainingKg: remCap,
+          isFullLoad: isFull,
+        });
+
+        remWeightMixed -= allocWeight;
+        tripCount++;
+      }
+
+      const totalMixedCap = mixedTrips.reduce((s, t) => s + t.capacityKg, 0);
+      const totalMixedEmpty = Math.max(0, totalMixedCap - orderTotalWeightKg);
+      const avgMixedUtil = totalMixedCap > 0 ? Math.round((orderTotalWeightKg / totalMixedCap) * 100) : 100;
+
+      const isMixedDistinct = mixedTrips.some(t => t.truckId !== mixedTrips[0]?.truckId);
+
+      const bestValuePlan: FleetRecommendationPlan = {
+        id: "plan_best_mixed",
+        type: isMixedDistinct ? "best_mixed" : "single_type",
+        title: isMixedDistinct 
+          ? `🏆 แผนผสมคุ้มค่าสูงสุด (ระวางแน่น ${avgMixedUtil}%)`
+          : `🏆 แผนจัดรถคุ้มค่าสูงสุด (${mixedTrips[0]?.truckName || chosenTruck.name})`,
+        badge: isMixedDistinct ? "จัดระวางคุ้มสุด" : (avgMixedUtil >= fullLoadPercent ? "เต็มเที่ยว 96%" : "เที่ยวประหยัด"),
+        badgeColor: "emerald",
+        isRecommended: true,
+        totalTrips: mixedTrips.length,
+        totalCapacityKg: totalMixedCap,
+        avgUtilizationPct: avgMixedUtil,
+        emptyCapacityKg: totalMixedEmpty,
+        trips: mixedTrips,
+        summary: isMixedDistinct
+          ? `ใช้ ${mixedTrips.map(t => `${t.truckName}`).join(" + ")} (${mixedTrips.length} เที่ยว)`
+          : `ใช้ ${mixedTrips[0]?.truckName || chosenTruck.name} จำนวน ${mixedTrips.length} เที่ยว`,
+        savingsHighlights: totalMixedEmpty > 0 
+          ? `เหลือพื้นที่ว่างเพียง ${totalMixedEmpty.toLocaleString()} กก. (ประหยัดค่ารถเที่ยวสุดท้าย)`
+          : `บรรทุกเต็มพิกัด 100% คุ้มค่าสูงสุด`,
+      };
+
+      fleetRecommendationPlans.push(bestValuePlan);
+
+      // Add Current Truck Plan if different or as standard comparison
+      const currentTruckTrips: FleetPlanTrip[] = tripDetails.map(t => ({
+        tripNumber: t.tripNumber,
+        truckId: chosenTruck.id,
+        truckName: chosenTruck.name,
+        capacityKg: chosenTruck.capacityKg,
+        allocatedWeightKg: t.weightKg,
+        loadPercent: t.loadPercent,
+        remainingKg: Math.max(0, chosenTruck.capacityKg - t.weightKg),
+        isFullLoad: t.isFullLoad,
+      }));
+      const currentTotalCap = chosenTruck.capacityKg * tripsNeeded;
+      const currentTotalEmpty = Math.max(0, currentTotalCap - orderTotalWeightKg);
+      const currentAvgUtil = currentTotalCap > 0 ? Math.round((orderTotalWeightKg / currentTotalCap) * 100) : 100;
+
+      fleetRecommendationPlans.push({
+        id: `plan_current_${chosenTruck.id}`,
+        type: "single_type",
+        title: `🚚 แผนใช้ ${chosenTruck.name} ล้วน`,
+        badge: "กำลังเลือกอยู่",
+        badgeColor: "blue",
+        isCurrent: true,
+        totalTrips: tripsNeeded,
+        totalCapacityKg: currentTotalCap,
+        avgUtilizationPct: currentAvgUtil,
+        emptyCapacityKg: currentTotalEmpty,
+        trips: currentTruckTrips,
+        summary: `ใช้ ${chosenTruck.name} ทั้งหมด ${tripsNeeded} เที่ยว`,
+        savingsHighlights: currentTotalEmpty > 0
+          ? `เที่ยวสุดท้ายเหลือพื้นที่ว่าง ${currentTotalEmpty.toLocaleString()} กก.`
+          : `ระวาง 100%`,
+      });
+
+      // Add other active trucks comparison
+      for (const otherTruck of sortedFleetDesc) {
+        if (otherTruck.id === chosenTruck.id) continue;
+        const oTrips = Math.max(1, Math.ceil(orderTotalWeightKg / otherTruck.capacityKg));
+        const oTotalCap = otherTruck.capacityKg * oTrips;
+        const oTotalEmpty = Math.max(0, oTotalCap - orderTotalWeightKg);
+        const oAvgUtil = Math.round((orderTotalWeightKg / oTotalCap) * 100);
+
+        const oTripAllocations: FleetPlanTrip[] = [];
+        let oRem = orderTotalWeightKg;
+        for (let i = 1; i <= oTrips; i++) {
+          const w = Math.min(oRem, otherTruck.capacityKg);
+          oTripAllocations.push({
+            tripNumber: i,
+            truckId: otherTruck.id,
+            truckName: otherTruck.name,
+            capacityKg: otherTruck.capacityKg,
+            allocatedWeightKg: w,
+            loadPercent: Math.round((w / otherTruck.capacityKg) * 100),
+            remainingKg: Math.max(0, otherTruck.capacityKg - w),
+            isFullLoad: w >= Math.round(otherTruck.capacityKg * thresholdFactor),
+          });
+          oRem -= w;
+        }
+
+        fleetRecommendationPlans.push({
+          id: `plan_truck_${otherTruck.id}`,
+          type: oTrips === 1 ? "single_trip_upgrade" : "single_type",
+          title: oTrips === 1 ? `⚡ แผนเที่ยวเดียวจบ (${otherTruck.name})` : `🚛 แผน ${otherTruck.name} ล้วน`,
+          badge: oTrips === 1 ? "1 เที่ยวจบ" : `${oTrips} เที่ยว (${oAvgUtil}%)`,
+          badgeColor: oTrips === 1 ? "purple" : "neutral",
+          totalTrips: oTrips,
+          totalCapacityKg: oTotalCap,
+          avgUtilizationPct: oAvgUtil,
+          emptyCapacityKg: oTotalEmpty,
+          trips: oTripAllocations,
+          summary: `ใช้ ${otherTruck.name} จำนวน ${oTrips} เที่ยว`,
+          savingsHighlights: oTrips === 1 
+            ? `จบงานในเที่ยวเดียว ไม่ต้องรอรถวิ่งรอบสอง`
+            : `พื้นที่ว่างรวม ${oTotalEmpty.toLocaleString()} กก.`,
+        });
+      }
+
       fullLoadStatus = {
         isFullLoad,
         currentWeightKg: orderTotalWeightKg,
@@ -517,6 +695,8 @@ export function calculateSupplierDelivery(
         tripDetails,
         truckTripOptions,
         singleTripAlternative,
+        fleetRecommendationPlans,
+        bestValuePlan,
         statusMessage,
         detailMessage,
       };

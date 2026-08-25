@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { AppSettings, SupplierProfile, DeliveryDestination } from "../types";
-import { defaultSuppliers } from "../data";
+import { defaultSuppliers, defaultSupplierTrucks } from "../data";
 import { 
   parseGoogleMapsInput, 
   calculateSupplierDelivery, 
@@ -29,7 +29,12 @@ import {
   Scale,
   Settings,
   Layers,
-  Map as MapIcon
+  Map as MapIcon,
+  Zap,
+  TrendingUp,
+  PackagePlus,
+  RefreshCw,
+  SlidersHorizontal
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -71,14 +76,23 @@ export default function DeliveryDistanceWidget({
 
   const effectiveOrderAmount = orderTotalAmount || orderAmount || 0;
 
-  // Available trucks for the active supplier
-  const availableTrucks = activeSupplier.deliveryConfig?.availableTrucks?.filter((t) => t.enabled) || [];
-  const [selectedTruckId, setSelectedTruckId] = useState<string>(() => availableTrucks[0]?.id || "truck_6wheel");
+  // Available trucks for the active supplier with robust fallback
+  const rawTrucks = activeSupplier.deliveryConfig?.availableTrucks;
+  const availableTrucks = (rawTrucks && rawTrucks.length > 0 && rawTrucks.some((t) => t.enabled))
+    ? rawTrucks.filter((t) => t.enabled)
+    : defaultSupplierTrucks.filter((t) => t.enabled);
+
+  const [selectedTruckId, setSelectedTruckId] = useState<string>(() => availableTrucks[0]?.id || "truck_semi");
   const [manualWeightInput, setManualWeightInput] = useState<number | undefined>(undefined);
+  const [customTripTrucks, setCustomTripTrucks] = useState<{ [tripNumber: number]: string }>({});
+  const [activePlanView, setActivePlanView] = useState<"optimizer" | "all_fleet">("optimizer");
 
   // Synchronize selected truck when active supplier changes
   useEffect(() => {
-    const trucks = activeSupplier.deliveryConfig?.availableTrucks?.filter((t) => t.enabled) || [];
+    const raw = activeSupplier.deliveryConfig?.availableTrucks;
+    const trucks = (raw && raw.length > 0 && raw.some((t) => t.enabled))
+      ? raw.filter((t) => t.enabled)
+      : defaultSupplierTrucks.filter((t) => t.enabled);
     if (trucks.length > 0 && !trucks.some((t) => t.id === selectedTruckId)) {
       setSelectedTruckId(trucks[0].id);
     }
@@ -214,10 +228,55 @@ export default function DeliveryDistanceWidget({
     selectedTruckId
   );
 
-  const tripsNeeded = calcResult?.fullLoadStatus?.tripsNeeded || 1;
+  // Active fleet available for dynamic multi-truck calculations
+  const activeFleet = availableTrucks.length > 0 ? availableTrucks : defaultSupplierTrucks;
+  const currentChosenTruck = activeFleet.find((t) => t.id === selectedTruckId) || activeFleet[activeFleet.length - 1];
+
+  // Dynamic trips calculation (respects customTripTrucks overrides per trip or plan recommendations)
+  const dynamicTrips: Array<{
+    tripNumber: number;
+    truckId: string;
+    truckName: string;
+    capacityKg: number;
+    weightKg: number;
+    loadPercent: number;
+    remainingKg: number;
+    isFullLoad: boolean;
+  }> = [];
+
+  if (effectiveWeightKg > 0) {
+    let remWeight = effectiveWeightKg;
+    let tripNum = 1;
+    const thresholdFactor = (activeSupplier.deliveryConfig?.fullLoadThresholdPercent ?? 96) / 100;
+
+    while (remWeight > 0 && tripNum <= 20) {
+      const tripTruckId = customTripTrucks[tripNum] || currentChosenTruck.id;
+      const tripTruck = activeFleet.find((t) => t.id === tripTruckId) || currentChosenTruck;
+      const tripWeight = Math.min(remWeight, tripTruck.capacityKg);
+      const tripLoadPct = Math.round((tripWeight / tripTruck.capacityKg) * 100);
+      const isFull = tripWeight >= Math.round(tripTruck.capacityKg * thresholdFactor);
+      const remKg = Math.max(0, tripTruck.capacityKg - tripWeight);
+
+      dynamicTrips.push({
+        tripNumber: tripNum,
+        truckId: tripTruck.id,
+        truckName: tripTruck.name,
+        capacityKg: tripTruck.capacityKg,
+        weightKg: tripWeight,
+        loadPercent: tripLoadPct,
+        remainingKg: remKg,
+        isFullLoad: isFull,
+      });
+
+      remWeight -= tripWeight;
+      tripNum++;
+    }
+  }
+
+  const effectiveTripsCount = dynamicTrips.length > 0 ? dynamicTrips.length : (calcResult?.fullLoadStatus?.tripsNeeded || 1);
   const baseTripFee = calcResult?.deliveryFee || 0;
-  const effectiveDeliveryFee = (multiplyFeeByTrips && tripsNeeded > 1 && !calcResult?.isFreeDelivery)
-    ? baseTripFee * tripsNeeded
+  const effectiveDeliveryFee = (multiplyFeeByTrips && effectiveTripsCount > 1 && !calcResult?.isFreeDelivery)
+    ? baseTripFee * effectiveTripsCount
     : baseTripFee;
 
   // Notify parent component about delivery fee
@@ -773,8 +832,210 @@ export default function DeliveryDistanceWidget({
                 </div>
               </div>
 
-              {/* Multi-Trip Recommendation & Breakdown (When Overweight / tripsNeeded > 1) */}
-              {calcResult.fullLoadStatus.tripsNeeded > 1 && (
+              {/* SMART FLEET OPTIMIZER & VEHICLE RECOMMENDATION SECTION */}
+              {effectiveWeightKg > 0 && calcResult.fullLoadStatus.fleetRecommendationPlans && calcResult.fullLoadStatus.fleetRecommendationPlans.length > 0 && (
+                <div className="bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 text-white p-4 sm:p-5 rounded-2xl border border-neutral-700 shadow-md space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-neutral-700/80 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-neutral-950 flex items-center justify-center font-extrabold shadow-xs shrink-0">
+                        <Sparkles size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                            แนะนำแผนจัดสรรรถขนส่งเพื่อให้คุ้มค่าที่สุด (Smart Fleet Optimizer)
+                          </h4>
+                          <span className="text-[10px] bg-amber-400/20 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-400/30">
+                            Auto Optimize
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-300">
+                          วิเคราะห์การจัดระวางบรรทุกรวม {fmt(effectiveWeightKg)} กก. เพื่อลดเที่ยววิ่งและประหยัดงบค่าขนส่งสูงสุด
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Tab Navigation */}
+                    <div className="flex items-center gap-1 bg-neutral-800/90 p-1 rounded-xl border border-neutral-700 self-start sm:self-auto text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setActivePlanView("optimizer")}
+                        className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          activePlanView === "optimizer"
+                            ? "bg-amber-500 text-neutral-950 shadow-xs"
+                            : "text-neutral-300 hover:text-white"
+                        }`}
+                      >
+                        🌟 แผนแนะนำ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivePlanView("all_fleet")}
+                        className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                          activePlanView === "all_fleet"
+                            ? "bg-amber-500 text-neutral-950 shadow-xs"
+                            : "text-neutral-300 hover:text-white"
+                        }`}
+                      >
+                        📊 เปรียบเทียบทุกขนาด
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Recommendation Plans Cards */}
+                  {activePlanView === "optimizer" ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {calcResult.fullLoadStatus.fleetRecommendationPlans.map((plan) => {
+                        const isBestValue = plan.id === "plan_best_mixed" || plan.isRecommended;
+                        const isCurrentType = plan.id.startsWith("plan_current");
+                        
+                        return (
+                          <div
+                            key={plan.id}
+                            className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                              isBestValue
+                                ? "bg-amber-950/40 border-amber-400/80 shadow-md ring-1 ring-amber-400/30"
+                                : "bg-neutral-800/70 border-neutral-700 hover:border-neutral-600"
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-sm">
+                                      {isBestValue ? "🏆" : isCurrentType ? "🚚" : "⚡"}
+                                    </span>
+                                    <h5 className="text-xs sm:text-sm font-extrabold text-white">
+                                      {plan.title}
+                                    </h5>
+                                  </div>
+                                  <p className="text-[11px] text-neutral-300">
+                                    {plan.summary}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  {isBestValue && (
+                                    <span className="text-[10px] bg-gradient-to-r from-amber-400 to-amber-500 text-neutral-950 font-extrabold px-2 py-0.5 rounded-full shadow-xs">
+                                      คุ้มค่าสูงสุด 🌟
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] bg-neutral-900/90 text-neutral-300 px-2 py-0.5 rounded-md font-mono border border-neutral-700">
+                                    ระวางรวม {plan.avgUtilizationPct}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Vehicles & Trips Visual List */}
+                              <div className="bg-neutral-900/80 rounded-lg p-2 border border-neutral-700/70 space-y-1.5 text-xs">
+                                <div className="flex items-center justify-between text-[11px] text-neutral-400 font-semibold border-b border-neutral-800 pb-1">
+                                  <span>รถที่ใช้ ({plan.totalTrips} คัน / เที่ยว)</span>
+                                  <span>ระวางจัดสรร</span>
+                                </div>
+                                {plan.trips.map((tr) => (
+                                  <div key={tr.tripNumber} className="flex items-center justify-between text-[11.5px] font-medium text-neutral-200">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="text-amber-400 font-bold">คันที่ {tr.tripNumber}:</span>
+                                      <span>{tr.truckName}</span>
+                                    </span>
+                                    <span className="font-mono font-bold text-amber-300">
+                                      {fmt(tr.allocatedWeightKg)} กก. ({tr.loadPercent}%)
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Highlights & Savings */}
+                              <div className="flex items-center justify-between text-[11px] text-neutral-300">
+                                <span>
+                                  พื้นที่ว่างเหลือรวม:{" "}
+                                  <strong className="font-mono text-white">{fmt(plan.emptyCapacityKg)} กก.</strong>
+                                </span>
+                                {plan.savingsHighlights && (
+                                  <span className="text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded text-[10.5px]">
+                                    {plan.savingsHighlights}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newMap: { [k: number]: string } = {};
+                                plan.trips.forEach((t) => {
+                                  newMap[t.tripNumber] = t.truckId;
+                                });
+                                setCustomTripTrucks(newMap);
+                                if (plan.trips[0]?.truckId) {
+                                  setSelectedTruckId(plan.trips[0].truckId);
+                                }
+                                setLastUpdatedKey(Date.now());
+                              }}
+                              className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-98 ${
+                                isBestValue
+                                  ? "bg-amber-400 hover:bg-amber-300 text-neutral-950 shadow-md font-extrabold"
+                                  : "bg-neutral-700 hover:bg-neutral-600 text-white"
+                              }`}
+                            >
+                              <span>
+                                {isBestValue ? "✨ นำแผนผสมคุ้มค่านี้ไปใช้งาน" : "เลือกใช้แผนนี้"}
+                              </span>
+                              <ArrowRight size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* All Fleet Type Comparison Matrix */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 pt-1">
+                      {availableTrucks.map((t) => {
+                        const tripsNeededForT = Math.max(1, Math.ceil(effectiveWeightKg / t.capacityKg));
+                        const totalCap = tripsNeededForT * t.capacityKg;
+                        const avgLoad = Math.round((effectiveWeightKg / totalCap) * 100);
+                        const isCurrent = selectedTruckId === t.id && Object.keys(customTripTrucks).length === 0;
+
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTruckId(t.id);
+                              setCustomTripTrucks({});
+                              setLastUpdatedKey(Date.now());
+                            }}
+                            className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer ${
+                              isCurrent
+                                ? "bg-amber-500/20 border-amber-400 text-white ring-1 ring-amber-400"
+                                : "bg-neutral-800/80 border-neutral-700 text-neutral-200 hover:border-neutral-600 hover:bg-neutral-800"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-xs text-white">{t.name}</span>
+                              <span className="text-[10px] font-mono text-amber-300 font-bold bg-neutral-900 px-1.5 py-0.5 rounded">
+                                {tripsNeededForT} เที่ยว
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-neutral-400 space-y-0.5 pt-1 border-t border-neutral-700/60">
+                              <div>พิกัด: {fmt(t.capacityKg)} กก.</div>
+                              <div>
+                                ระวางรวมเฉลี่ย:{" "}
+                                <strong className="text-amber-300 font-bold font-mono">{avgLoad}%</strong>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Multi-Trip Recommendation & Breakdown Grid */}
+              {effectiveTripsCount > 1 && (
                 <div className="bg-gradient-to-br from-red-50/90 via-white to-amber-50/50 p-4 rounded-xl border border-red-200/90 shadow-2xs space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-red-100 pb-2">
                     <div className="flex items-center gap-2">
@@ -783,63 +1044,121 @@ export default function DeliveryDistanceWidget({
                       </div>
                       <div>
                         <h5 className="text-xs sm:text-sm font-bold text-neutral-900">
-                          แผนจัดสรรเที่ยวขนส่งสำหรับ {calcResult.fullLoadStatus.truckName}
+                          แผนจัดสรรเที่ยวขนส่ง ({effectiveTripsCount} คัน / {effectiveTripsCount} เที่ยว)
                         </h5>
                         <p className="text-[11px] text-neutral-600">
-                          น้ำหนักรวม {fmt(calcResult.fullLoadStatus.currentWeightKg)} กก. ต้องใช้ทั้งหมด{" "}
-                          <strong className="text-red-700 font-extrabold underline decoration-red-400 font-mono text-xs">
-                            {calcResult.fullLoadStatus.tripsNeeded} คัน ({calcResult.fullLoadStatus.tripsNeeded} เที่ยว)
-                          </strong>
+                          น้ำหนักรวม {fmt(effectiveWeightKg)} กก. สามารถเลือกเปลี่ยนประเภทรถของแต่ละเที่ยวได้อิสระ
                         </p>
                       </div>
                     </div>
 
-                    <div className="bg-red-100/80 text-red-900 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto">
-                      <AlertTriangle size={14} className="text-red-600" />
-                      <span>เกินพิกัด 1 คัน {(calcResult.fullLoadStatus.currentWeightKg - calcResult.fullLoadStatus.capacityKg).toLocaleString()} กก.</span>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      {Object.keys(customTripTrucks).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomTripTrucks({});
+                            setLastUpdatedKey(Date.now());
+                          }}
+                          className="text-[11px] text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-300 px-2 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                        >
+                          <RefreshCw size={12} />
+                          <span>รีเซ็ตประเภทรถ</span>
+                        </button>
+                      )}
+
+                      <div className="bg-red-100/80 text-red-900 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5">
+                        <AlertTriangle size={14} className="text-red-600" />
+                        <span>ต้องใช้ {effectiveTripsCount} คัน</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Trip Breakdown Grid */}
+                  {/* Trip Breakdown Grid with Interactive Vehicle Selector per Trip */}
                   <div className="space-y-1.5">
                     <span className="text-[11px] font-bold text-neutral-700 block">
-                      📋 จำแนกน้ำหนักบรรทุกในแต่ละเที่ยว:
+                      📋 จำแนกน้ำหนักบรรทุกในแต่ละเที่ยว (คลิกเพื่อสลับขนาดรถในแต่ละคันได้):
                     </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {calcResult.fullLoadStatus.tripDetails.map((trip) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                      {dynamicTrips.map((trip) => (
                         <div
                           key={trip.tripNumber}
-                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                          className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-2 ${
                             trip.loadPercent === 100
                               ? "bg-white border-neutral-300 shadow-2xs"
                               : trip.isFullLoad
-                              ? "bg-emerald-50/70 border-emerald-300 shadow-2xs"
-                              : "bg-amber-50/70 border-amber-300 shadow-2xs"
+                              ? "bg-emerald-50/80 border-emerald-300 shadow-2xs"
+                              : "bg-amber-50/80 border-amber-300 shadow-2xs"
                           }`}
                         >
-                          <div className="flex items-center justify-between text-xs font-bold text-neutral-900">
-                            <span className="flex items-center gap-1">
-                              <span>🚚 คันที่ {trip.tripNumber}</span>
-                            </span>
-                            <span className="font-mono text-red-700 font-extrabold">
-                              {fmt(trip.weightKg)} กก.
-                            </span>
+                          <div className="space-y-1.5">
+                            {/* Trip Header & Truck Selector */}
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-bold text-neutral-900 flex items-center gap-1">
+                                <span>🚚 คันที่ {trip.tripNumber}</span>
+                              </span>
+                              <span className="font-mono text-red-700 font-extrabold text-xs">
+                                {fmt(trip.weightKg)} กก.
+                              </span>
+                            </div>
+
+                            {/* Dropdown to change vehicle for this specific trip */}
+                            <div>
+                              <select
+                                value={trip.truckId}
+                                onChange={(e) => {
+                                  setCustomTripTrucks((prev) => ({
+                                    ...prev,
+                                    [trip.tripNumber]: e.target.value
+                                  }));
+                                  setLastUpdatedKey(Date.now());
+                                }}
+                                className="w-full text-[11px] bg-white font-semibold text-neutral-800 border border-neutral-300 rounded-lg px-2 py-1 focus:ring-1 focus:ring-red-400 outline-none cursor-pointer"
+                              >
+                                {activeFleet.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} (พิกัด {fmt(t.capacityKg)} กก.)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Visual Meter for Trip */}
+                            <div className="space-y-1 pt-1">
+                              <div className="flex items-center justify-between text-[10.5px] text-neutral-600">
+                                <span>พิกัด {fmt(trip.capacityKg)} กก.</span>
+                                <span
+                                  className={`font-bold ${
+                                    trip.loadPercent === 100
+                                      ? "text-neutral-800"
+                                      : trip.isFullLoad
+                                      ? "text-emerald-700"
+                                      : "text-amber-800"
+                                  }`}
+                                >
+                                  ระวาง {trip.loadPercent}% {trip.isFullLoad ? "🎯" : ""}
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full ${
+                                    trip.isFullLoad ? "bg-emerald-500" : "bg-amber-500"
+                                  }`}
+                                  style={{ width: `${Math.min(100, trip.loadPercent)}%` }}
+                                />
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-[10px] mt-1 pt-1 border-t border-neutral-200/60 text-neutral-500">
-                            <span>พิกัด {fmt(trip.maxCapacityKg)} กก.</span>
-                            <span
-                              className={`font-bold ${
-                                trip.loadPercent === 100
-                                  ? "text-neutral-800"
-                                  : trip.isFullLoad
-                                  ? "text-emerald-700"
-                                  : "text-amber-800"
-                              }`}
-                            >
-                              ระวาง {trip.loadPercent}% {trip.isFullLoad ? "🎯" : ""}
-                            </span>
-                          </div>
+                          {/* Capacity Optimization Tip (Boost Load) */}
+                          {trip.remainingKg > 0 && (
+                            <div className="p-1.5 rounded-lg bg-amber-100/70 border border-amber-300/80 text-[10px] text-amber-900 leading-tight flex items-start gap-1">
+                              <span className="shrink-0">💡</span>
+                              <span>
+                                เหลือระวาง <strong>{fmt(trip.remainingKg)} กก.</strong> (สั่งเพิ่มได้โดยไม่เพิ่มค่ารถ)
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -862,6 +1181,7 @@ export default function DeliveryDistanceWidget({
                         type="button"
                         onClick={() => {
                           setSelectedTruckId(calcResult.fullLoadStatus!.singleTripAlternative!.truckId);
+                          setCustomTripTrucks({});
                           setLastUpdatedKey(Date.now());
                         }}
                         className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
@@ -885,16 +1205,16 @@ export default function DeliveryDistanceWidget({
                         className="w-4 h-4 text-[#C62828] accent-[#C62828] rounded border-neutral-300 focus:ring-red-500 cursor-pointer"
                       />
                       <span className="font-bold text-neutral-800">
-                        คำนวณค่าจัดส่งรวมตามจำนวนเที่ยวจริง (x{calcResult.fullLoadStatus.tripsNeeded} เที่ยว)
+                        คำนวณค่าจัดส่งรวมตามจำนวนเที่ยวจริง (x{effectiveTripsCount} เที่ยว)
                       </span>
                     </label>
 
                     <div className="text-left sm:text-right pl-6 sm:pl-0">
                       <span className="text-neutral-500 text-[11px]">
-                        เที่ยวละ ฿{fmt(baseTripFee)} x {calcResult.fullLoadStatus.tripsNeeded} เที่ยว ={" "}
+                        เที่ยวละ ฿{fmt(baseTripFee)} x {effectiveTripsCount} เที่ยว ={" "}
                       </span>
                       <strong className="text-[#C62828] font-mono font-bold text-sm">
-                        ฿{fmt(baseTripFee * calcResult.fullLoadStatus.tripsNeeded)} บาท
+                        ฿{fmt(baseTripFee * effectiveTripsCount)} บาท
                       </strong>
                     </div>
                   </div>
@@ -1008,9 +1328,9 @@ export default function DeliveryDistanceWidget({
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] font-bold text-neutral-500 uppercase tracking-wide">ค่าจัดส่งสุทธิ</span>
-                    {tripsNeeded > 1 && !calcResult.isFreeDelivery && (
+                    {effectiveTripsCount > 1 && !calcResult.isFreeDelivery && (
                       <span className="text-[10px] bg-red-100 text-red-800 font-bold px-1.5 py-0.2 rounded border border-red-200">
-                        {tripsNeeded} เที่ยว
+                        {effectiveTripsCount} เที่ยว
                       </span>
                     )}
                   </div>
@@ -1030,10 +1350,10 @@ export default function DeliveryDistanceWidget({
                   <div className="text-[10px] text-neutral-500 text-right">
                     {calcResult.isFreeDelivery ? (
                       <span className="text-emerald-700 font-semibold">ประหยัดค่าขนส่งให้ลูกค้า</span>
-                    ) : tripsNeeded > 1 ? (
+                    ) : effectiveTripsCount > 1 ? (
                       multiplyFeeByTrips ? (
                         <span className="font-semibold text-red-700">
-                          รวม {tripsNeeded} เที่ยว (เที่ยวละ ฿{fmt(baseTripFee)})
+                          รวม {effectiveTripsCount} เที่ยว (เที่ยวละ ฿{fmt(baseTripFee)})
                         </span>
                       ) : (
                         <span>คิดเที่ยวละ ฿{fmt(baseTripFee)} (1 เที่ยว)</span>
