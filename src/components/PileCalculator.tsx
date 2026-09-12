@@ -22,6 +22,12 @@ export default function PileCalculator({
   const [pileLength, setPileLength] = useState<number | "">(2.0);
   const [pileCount, setPileCount] = useState<number | "">(10);
 
+  const isCustomPile = pileType.startsWith("custom_");
+  const customPiles = (settings.customProducts || []).filter(
+    (cp) => (cp.category === "i_piles" || cp.category === "s_piles" || cp.category === "hex_fence") && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+  const selectedCustomPile = customPiles.find((cp) => cp.id === pileType);
+
   const isI_Shape = pileType === "i18" || pileType === "i22" || pileType === "i26" || pileType === "i30" || pileType === "i35" || pileType === "i40";
   const isS_Shape = pileType === "s18" || pileType === "s22" || pileType === "s26" || pileType === "s30" || pileType === "s35" || pileType === "s40";
   const hasConnectionOption = isI_Shape || isS_Shape;
@@ -37,7 +43,10 @@ export default function PileCalculator({
   let pricePerMeter = 0;
   let weightPerMeter = 0;
 
-  if (pileType === "i15") {
+  if (selectedCustomPile) {
+    pricePerMeter = selectedCustomPile.price;
+    weightPerMeter = selectedCustomPile.weight;
+  } else if (pileType === "i15") {
     pricePerMeter = settings.prices.i15Price;
     weightPerMeter = settings.weights.i15;
   } else if (pileType === "hex") {
@@ -136,27 +145,36 @@ export default function PileCalculator({
                 onChange={(e) => setPileType(e.target.value)}
                 className="w-full p-3 bg-neutral-50 hover:bg-neutral-100 transition border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828]"
               >
+                {customPiles.length > 0 && (
+                  <optgroup label="⭐ สินค้ากำหนดเอง (Custom Products)">
+                    {customPiles.map((cp) => (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.name} {cp.subLabel ? `(${cp.subLabel})` : ""} - ฿{fmt(cp.price)}/ม. ({cp.weight} {cp.weightUnit})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
                 <optgroup label="เสาเข็มไอ (I-Shape Pile)">
-                  <option value="i15">เสาเข็มไอ I-15</option>
-                  <option value="i18">เสาเข็มไอ I-18</option>
-                  <option value="i22">เสาเข็มไอ I-22</option>
-                  <option value="i26">เสาเข็มไอ I-26</option>
-                  <option value="i30">เสาเข็มไอ I-30</option>
-                  <option value="i35">เสาเข็มไอ I-35</option>
-                  <option value="i40">เสาเข็มไอ I-40</option>
+                  {!settings.deletedItemIds?.includes("i15Price") && <option value="i15">เสาเข็มไอ I-15</option>}
+                  {(!settings.deletedItemIds?.includes("i18NoTISPrice") || !settings.deletedItemIds?.includes("i18TISPrice")) && <option value="i18">เสาเข็มไอ I-18</option>}
+                  {(!settings.deletedItemIds?.includes("i22NoTISPrice") || !settings.deletedItemIds?.includes("i22TISPrice")) && <option value="i22">เสาเข็มไอ I-22</option>}
+                  {(!settings.deletedItemIds?.includes("i26NoTISPrice") || !settings.deletedItemIds?.includes("i26TISPrice")) && <option value="i26">เสาเข็มไอ I-26</option>}
+                  {(!settings.deletedItemIds?.includes("i30NoTISPrice") || !settings.deletedItemIds?.includes("i30TISPrice")) && <option value="i30">เสาเข็มไอ I-30</option>}
+                  {!settings.deletedItemIds?.includes("i35TISPrice") && <option value="i35">เสาเข็มไอ I-35</option>}
+                  {!settings.deletedItemIds?.includes("i40TISPrice") && <option value="i40">เสาเข็มไอ I-40</option>}
                 </optgroup>
                 <optgroup label="เสาสี่เหลี่ยมตัน (Solid Square Pile) - ใหม่ ✨">
-                  <option value="s18">เสาสี่เหลี่ยมตัน S-18</option>
-                  <option value="s22">เสาสี่เหลี่ยมตัน S-22</option>
-                  <option value="s26">เสาสี่เหลี่ยมตัน S-26</option>
-                  <option value="s30">เสาสี่เหลี่ยมตัน S-30</option>
-                  <option value="s35">เสาสี่เหลี่ยมตัน S-35</option>
-                  <option value="s40">เสาสี่เหลี่ยมตัน S-40</option>
+                  {!settings.deletedItemIds?.includes("s18Price") && <option value="s18">เสาสี่เหลี่ยมตัน S-18</option>}
+                  {!settings.deletedItemIds?.includes("s22Price") && <option value="s22">เสาสี่เหลี่ยมตัน S-22</option>}
+                  {!settings.deletedItemIds?.includes("s26Price") && <option value="s26">เสาสี่เหลี่ยมตัน S-26</option>}
+                  {!settings.deletedItemIds?.includes("s30Price") && <option value="s30">เสาสี่เหลี่ยมตัน S-30</option>}
+                  {!settings.deletedItemIds?.includes("s35Price") && <option value="s35">เสาสี่เหลี่ยมตัน S-35</option>}
+                  {!settings.deletedItemIds?.includes("s40Price") && <option value="s40">เสาสี่เหลี่ยมตัน S-40</option>}
                 </optgroup>
                 <optgroup label="เสาเข็มประเภทอื่นๆ & เสารั้ว">
-                  <option value="hex">เสาเข็ม หกเหลี่ยมกลวง</option>
-                  <option value="fence3">เสารั้วลวดหนาม 3"</option>
-                  <option value="fence4">เสารั้วลวดหนาม 4"</option>
+                  {!settings.deletedItemIds?.includes("hexPilePrice") && <option value="hex">เสาเข็ม หกเหลี่ยมกลวง</option>}
+                  {!settings.deletedItemIds?.includes("fence3Price") && <option value="fence3">เสารั้วลวดหนาม 3"</option>}
+                  {!settings.deletedItemIds?.includes("fence4Price") && <option value="fence4">เสารั้วลวดหนาม 4"</option>}
                 </optgroup>
               </select>
             </div>

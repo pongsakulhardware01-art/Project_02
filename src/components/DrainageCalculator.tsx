@@ -45,13 +45,32 @@ export default function DrainageCalculator({
   const [pipeSize, setPipeSize] = useState<string>("0.30");
   const [basinSize, setBasinSize] = useState<string>("0.30");
   const [pipeStandard, setPipeStandard] = useState<"norm" | "t3" | "t2">("norm");
-  const [quantity, setQuantity] = useState<number | " text-center">(10);
+  const [quantity, setQuantity] = useState<number | "">(10);
   const [customPrice, setCustomPrice] = useState<string>("");
   const [additionalPrice, setAdditionalPrice] = useState<number | "">(0);
   const [addedNotification, setAddedNotification] = useState<string | null>(null);
 
+  const customPipes = (settings.customProducts || []).filter(
+    (cp) => cp.category === "pipes" && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+  const customBasins = (settings.customProducts || []).filter(
+    (cp) => cp.category === "basins" && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+
   // Get active configurations depending on selected category & size
   const getPipeDetails = (size: string, std: "norm" | "t3" | "t2") => {
+    if (size.startsWith("custom_")) {
+      const cp = customPipes.find((p) => p.id === size);
+      if (cp) {
+        return {
+          price: cp.price || 0,
+          weight: cp.weight || 0,
+          priceKey: cp.id as any,
+          weightKey: cp.id as any,
+          label: `⭐ ${cp.name} ${cp.subLabel ? `(${cp.subLabel})` : ""}`
+        };
+      }
+    }
     const suffix = size.replace(".", ""); // "030", "040", etc
     const priceKey = `pipe${suffix}${std === "norm" ? "NoTIS" : (std === "t3" ? "T3" : "T2")}Price` as keyof typeof settings.prices;
     const weightKey = `pipe${suffix}${std === "norm" ? "" : (std === "t3" ? "T3" : "T2")}Weight` as keyof typeof settings.weights;
@@ -66,6 +85,18 @@ export default function DrainageCalculator({
   };
 
   const getBasinDetails = (size: string) => {
+    if (size.startsWith("custom_")) {
+      const cp = customBasins.find((p) => p.id === size);
+      if (cp) {
+        return {
+          price: cp.price || 0,
+          weight: cp.weight || 0,
+          priceKey: cp.id as any,
+          weightKey: cp.id as any,
+          label: `⭐ ${cp.name} ${cp.subLabel ? `(${cp.subLabel})` : ""}`
+        };
+      }
+    }
     const suffix = size.replace(".", "");
     const priceKey = `basin${suffix}Price` as keyof typeof settings.prices;
     const weightKey = `basin${suffix}Weight` as keyof typeof settings.weights;
@@ -96,9 +127,20 @@ export default function DrainageCalculator({
   const totalWeight = activeDetails.weight * calcQty;
 
   const handleAddToWeightList = () => {
-    const weightValKey = itemCategory === "pipe" 
-      ? `pipe${pipeSize.replace(".", "")}${pipeStandard === "norm" ? "" : (pipeStandard === "t3" ? "_t3" : "_t2")}`
-      : `basin${basinSize.replace(".", "")}`;
+    let weightValKey = "";
+    if (itemCategory === "pipe") {
+      if (pipeSize.startsWith("custom_")) {
+        weightValKey = pipeSize;
+      } else {
+        weightValKey = `pipe${pipeSize.replace(".", "")}${pipeStandard === "norm" ? "" : (pipeStandard === "t3" ? "_t3" : "_t2")}`;
+      }
+    } else {
+      if (basinSize.startsWith("custom_")) {
+        weightValKey = basinSize;
+      } else {
+        weightValKey = `basin${basinSize.replace(".", "")}`;
+      }
+    }
 
     // Add directly to persistent items list in App.tsx
     const newItem: WeightItem = {
@@ -222,14 +264,25 @@ export default function DrainageCalculator({
                       }}
                       className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl font-medium text-neutral-800"
                     >
-                      <option value="0.30">Ø 0.30 ม. (ปกติใช้ล้อมบ่อน้ำข้น/ส่งผ่านเขตสวน)</option>
-                      <option value="0.40">Ø 0.40 ม. (ระบายน้ำไหลเบา แถวถนนในซอย)</option>
-                      <option value="0.50">Ø 0.50 ม. (ระบายน้ำมาตรฐานโครงสร้างจัดสรร)</option>
-                      <option value="0.60">Ø 0.60 ม. (ท่อผ่านเขตขนานใหญ่ ยอดฮิต)</option>
-                      <option value="0.80">Ø 0.80 ม. (ขยายพิกัดลำระบายชุมชนหลัก)</option>
-                      <option value="1.00">Ø 1.00 ม. (พิกัดแรงดันสูง ลอดทางผ่านถนนหลวง)</option>
-                      <option value="1.20">Ø 1.20 ม. (ระบายรวมสายเมนหลักราชการ)</option>
-                      <option value="1.50">Ø 1.50 ม. (ขนาดสูงสุดพิเศษ บายพาสน้ำหลากพิเศษ)</option>
+                      {customPipes.length > 0 && (
+                        <optgroup label="⭐ ท่อระบายน้ำกำหนดเอง (Custom Pipes)">
+                          {customPipes.map((cp) => (
+                            <option key={cp.id} value={cp.id}>
+                              ⭐ {cp.name} {cp.subLabel ? `(${cp.subLabel})` : ""} - ฿{fmt(cp.price)}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="ท่อระบายน้ำมาตรฐาน">
+                        <option value="0.30">Ø 0.30 ม. (ปกติใช้ล้อมบ่อน้ำข้น/ส่งผ่านเขตสวน)</option>
+                        <option value="0.40">Ø 0.40 ม. (ระบายน้ำไหลเบา แถวถนนในซอย)</option>
+                        <option value="0.50">Ø 0.50 ม. (ระบายน้ำมาตรฐานโครงสร้างจัดสรร)</option>
+                        <option value="0.60">Ø 0.60 ม. (ท่อผ่านเขตขนานใหญ่ ยอดฮิต)</option>
+                        <option value="0.80">Ø 0.80 ม. (ขยายพิกัดลำระบายชุมชนหลัก)</option>
+                        <option value="1.00">Ø 1.00 ม. (พิกัดแรงดันสูง ลอดทางผ่านถนนหลวง)</option>
+                        <option value="1.20">Ø 1.20 ม. (ระบายรวมสายเมนหลักราชการ)</option>
+                        <option value="1.50">Ø 1.50 ม. (ขนาดสูงสุดพิเศษ บายพาสน้ำหลากพิเศษ)</option>
+                      </optgroup>
                     </select>
                   </div>
 
@@ -272,13 +325,24 @@ export default function DrainageCalculator({
                     }}
                     className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl font-medium text-neutral-800"
                   >
-                    <option value="0.30">ขนาดบ่อขนาดเล็ก 0.30 ม. (สำหรับท่อ Ø 0.30 ม.)</option>
-                    <option value="0.40">ขนาดบ่อระดับเข้าสวน 0.40 ม. (สำหรับท่อ Ø 0.30, 0.40 ม.)</option>
-                    <option value="0.50">ขนาดบ่อถนนในซอย 0.50 ม. (สำหรับท่อ Ø 0.40, 0.50 ม.)</option>
-                    <option value="0.60">ขนาดโครงการฮิต 0.60 ม. (สำหรับท่อ Ø 0.50, 0.60 ม.)</option>
-                    <option value="0.80">ขนาดชุมชนหลัก 0.80 ม. (สำหรับท่อ Ø 0.60, 0.80 ม.)</option>
-                    <option value="1.00">ขนาดบายพาสเมน 1.00 ม. (สำหรับท่อ Ø 0.80, 1.00 ม.)</option>
-                    <option value="1.20">ขนาดราชการเมนใหญ่ 1.20 ม. (สำหรับท่อ Ø 1.00, 1.20 ม.)</option>
+                    {customBasins.length > 0 && (
+                      <optgroup label="⭐ บ่อพักกำหนดเอง (Custom Basins)">
+                        {customBasins.map((cb) => (
+                          <option key={cb.id} value={cb.id}>
+                            ⭐ {cb.name} {cb.subLabel ? `(${cb.subLabel})` : ""} - ฿{fmt(cb.price)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="บ่อพักมาตรฐาน">
+                      <option value="0.30">ขนาดบ่อขนาดเล็ก 0.30 ม. (สำหรับท่อ Ø 0.30 ม.)</option>
+                      <option value="0.40">ขนาดบ่อระดับเข้าสวน 0.40 ม. (สำหรับท่อ Ø 0.30, 0.40 ม.)</option>
+                      <option value="0.50">ขนาดบ่อถนนในซอย 0.50 ม. (สำหรับท่อ Ø 0.40, 0.50 ม.)</option>
+                      <option value="0.60">ขนาดโครงการฮิต 0.60 ม. (สำหรับท่อ Ø 0.50, 0.60 ม.)</option>
+                      <option value="0.80">ขนาดชุมชนหลัก 0.80 ม. (สำหรับท่อ Ø 0.60, 0.80 ม.)</option>
+                      <option value="1.00">ขนาดบายพาสเมน 1.00 ม. (สำหรับท่อ Ø 0.80, 1.00 ม.)</option>
+                      <option value="1.20">ขนาดราชการเมนใหญ่ 1.20 ม. (สำหรับท่อ Ø 1.00, 1.20 ม.)</option>
+                    </optgroup>
                   </select>
                 </div>
               )}

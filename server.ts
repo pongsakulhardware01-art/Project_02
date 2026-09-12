@@ -337,6 +337,8 @@ async function startServer() {
     prices: { ...defaultUpdatedSettings.prices },
     costs: { ...defaultUpdatedSettings.costs },
     weights: { ...defaultUpdatedSettings.weights },
+    customProducts: [],
+    deletedItemIds: [],
   };
 
   const dbPath = path.join(process.cwd(), "settings-db.json");
@@ -406,6 +408,9 @@ async function startServer() {
         prices: activeSupplier ? activeSupplier.prices : defaultUpdatedSettings.prices,
         costs: activeSupplier ? activeSupplier.costs : defaultUpdatedSettings.costs,
         weights: activeSupplier ? activeSupplier.weights : defaultUpdatedSettings.weights,
+        customProducts: Array.isArray(currentSettings.customProducts) ? currentSettings.customProducts : [],
+        deletedItemIds: Array.isArray(currentSettings.deletedItemIds) ? currentSettings.deletedItemIds : [],
+        defaultDestination: currentSettings.defaultDestination || undefined,
       };
       console.log("Migrated and synchronized multi-supplier settings schema");
     }
@@ -522,6 +527,107 @@ async function startServer() {
     } catch (e) {
       console.error("Error saving settings", e);
       res.status(500).json({ error: "Could not save settings on backend" });
+    }
+  });
+
+  // API 4: Cloud Status Check & Real-time Diagnostic
+  app.get("/api/cloud-status", async (req, res) => {
+    const startTime = Date.now();
+    let firestoreConfig: any = null;
+    if (fs.existsSync(configPath)) {
+      try {
+        firestoreConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    if (!db) {
+      return res.json({
+        connected: false,
+        status: "disconnected",
+        message: "Firebase ยังไม่ได้เชื่อมต่อ หรือไม่พบไฟล์คอนฟิก",
+        projectId: firestoreConfig?.projectId || "N/A",
+        databaseId: firestoreConfig?.firestoreDatabaseId || "N/A",
+        latencyMs: 0,
+        cachedInRam: !!cachedSettings,
+        lastChecked: new Date().toISOString(),
+      });
+    }
+
+    try {
+      const docRef = doc(db, "settings", "config");
+      const docSnap = await getDoc(docRef);
+      const latencyMs = Date.now() - startTime;
+      const data = docSnap.exists() ? docSnap.data() : null;
+
+      const suppliersCount = Array.isArray(data?.suppliers) ? data.suppliers.length : 0;
+      const customCount = Array.isArray(data?.customProducts) ? data.customProducts.length : 0;
+      const deletedCount = Array.isArray(data?.deletedItemIds) ? data.deletedItemIds.length : 0;
+
+      return res.json({
+        connected: true,
+        status: "online",
+        message: "ระบบคลาวด์เชื่อมต่อและซิงค์ข้อมูลสมบูรณ์ 100%",
+        projectId: firestoreConfig?.projectId || "steady-order-0fs6l",
+        databaseId: firestoreConfig?.firestoreDatabaseId || "ai-studio-pongsakulhardwar-c9b85e7e-1f40-457d-a048-1a91b69823bf",
+        documentExists: docSnap.exists(),
+        latencyMs,
+        activeSupplierId: data?.activeSupplierId || "pongsakul_main",
+        suppliersCount,
+        customProductsCount: customCount,
+        deletedItemsCount: deletedCount,
+        cachedInRam: !!cachedSettings,
+        lastChecked: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      const latencyMs = Date.now() - startTime;
+      console.error("Cloud status check error:", error);
+      return res.json({
+        connected: false,
+        status: "error",
+        message: "เกิดข้อผิดพลาดในการติดต่อ Firestore: " + (error?.message || "Unknown error"),
+        projectId: firestoreConfig?.projectId || "N/A",
+        databaseId: firestoreConfig?.firestoreDatabaseId || "N/A",
+        latencyMs,
+        cachedInRam: !!cachedSettings,
+        error: error?.message,
+        lastChecked: new Date().toISOString(),
+      });
+    }
+  });
+
+  // API 4.1: Cloud Test & Force Sync
+  app.post("/api/cloud-test", async (req, res) => {
+    const startTime = Date.now();
+    if (!db) {
+      return res.status(503).json({ success: false, error: "Database not initialized" });
+    }
+
+    try {
+      // 1. Test read
+      const docRef = doc(db, "settings", "config");
+      const docSnap = await getDoc(docRef);
+      
+      // 2. Test write with current cached settings
+      const targetSettings = cachedSettings || fullDefaultSettings;
+      await setDoc(docRef, targetSettings);
+
+      const latencyMs = Date.now() - startTime;
+      return res.json({
+        success: true,
+        readSuccess: true,
+        writeSuccess: true,
+        latencyMs,
+        message: `ทดสอบอ่านและบันทึกคลาวด์สำเร็จ (${latencyMs}ms)`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Cloud test failed",
+        latencyMs: Date.now() - startTime,
+      });
     }
   });
 

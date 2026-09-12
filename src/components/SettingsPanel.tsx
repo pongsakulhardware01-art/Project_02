@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { AppSettings, Prices, Weights, SupplierProfile, SupplierLocation, DeliveryConfig, DistanceTier, SupplierTruck, MinOrderCriteriaType } from "../types";
+import { AppSettings, Prices, Weights, SupplierProfile, SupplierLocation, DeliveryConfig, DistanceTier, SupplierTruck, MinOrderCriteriaType, CustomProduct } from "../types";
 import { defaultSettings, defaultPrices, defaultCosts, defaultWeights, defaultSuppliers, defaultDistanceTiers, defaultSupplierTrucks, APP_VERSION } from "../data";
 import { fmt } from "../utils";
 import { parseGoogleMapsInput, isValidLatLng, PRESET_LOCATIONS, createGoogleMapsDirectionsUrl } from "../utils/geoUtils";
@@ -7,6 +7,8 @@ import { PriceCostMarkupItem } from "./PriceCostMarkupCard";
 import { BulkMarkupToolbar } from "./BulkMarkupToolbar";
 import { SupplierPricingSection } from "./SupplierPricingSection";
 import { SupplierWeightsSection } from "./SupplierWeightsSection";
+import { CloudSystemStatusCard } from "./CloudSystemStatusCard";
+import AddProductModal from "./AddProductModal";
 import html2canvas from "html2canvas";
 import {
   Save,
@@ -16,6 +18,7 @@ import {
   Percent,
   DollarSign,
   Scale,
+  Cloud,
   CheckCircle2,
   Download,
   Plus,
@@ -66,9 +69,17 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
   const [pricesInput, setPricesInput] = useState<Prices>({ ...(currentSupplier?.prices || settings.prices || defaultPrices) });
   const [costsInput, setCostsInput] = useState<Prices>({ ...(currentSupplier?.costs || settings.costs || defaultCosts) });
   const [weightsInput, setWeightsInput] = useState<Weights>({ ...(currentSupplier?.weights || settings.weights || defaultWeights) });
+  const [customProducts, setCustomProducts] = useState<CustomProduct[]>(() => {
+    return currentSupplier?.customProducts || settings.customProducts || [];
+  });
+  const [deletedItemIds, setDeletedItemIds] = useState<string[]>(() => {
+    return currentSupplier?.deletedItemIds || settings.deletedItemIds || [];
+  });
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState<boolean>(false);
+  const [addProductCategory, setAddProductCategory] = useState<CustomProduct["category"]>("other");
 
-  // Tab state between Prices (with Cost & Markup) and Weights
-  const [activePriceWeightTab, setActivePriceWeightTab] = useState<"prices" | "weights">("prices");
+  // Tab state between Prices (with Cost & Markup), Weights, and Cloud Diagnostic
+  const [activePriceWeightTab, setActivePriceWeightTab] = useState<"prices" | "weights" | "cloud">("prices");
 
   // Location & Google Maps States
   const [supplierAddress, setSupplierAddress] = useState<string>(
@@ -137,6 +148,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       setPricesInput({ ...(sup.prices || defaultPrices) });
       setCostsInput({ ...(sup.costs || defaultCosts) });
       setWeightsInput({ ...(sup.weights || defaultWeights) });
+      setCustomProducts(sup.customProducts || []);
+      setDeletedItemIds(sup.deletedItemIds || []);
       setSupplierAddress(sup.supplierLocation?.address || sup.location || "");
       setSupplierMapsUrl(sup.supplierLocation?.mapsUrl || "");
       setSupplierLat(sup.supplierLocation?.lat ?? 13.5475);
@@ -513,9 +526,22 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
   };
 
   // Cost, Markup, and Price Change Handlers
-  const handleCostChange = (field: keyof Prices, costVal: number) => {
-    const currentPrice = pricesInput[field] ?? 0;
-    const oldCost = costsInput[field] ?? 0;
+  const handleCostChange = (field: any, costVal: number) => {
+    if (typeof field === "string" && field.startsWith("custom_")) {
+      setCustomProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === field) {
+            const m = p.markup ?? Math.max(0, p.price - p.cost);
+            return { ...p, cost: costVal, price: Number((costVal + m).toFixed(2)) };
+          }
+          return p;
+        })
+      );
+      return;
+    }
+
+    const currentPrice = pricesInput[field as keyof Prices] ?? 0;
+    const oldCost = costsInput[field as keyof Prices] ?? 0;
     const currentMarkup = Math.max(0, Number((currentPrice - oldCost).toFixed(2)));
     const newPrice = Number((costVal + currentMarkup).toFixed(2));
     
@@ -523,18 +549,169 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     setPricesInput((prev) => ({ ...prev, [field]: newPrice }));
   };
 
-  const handleMarkupChange = (field: keyof Prices, markupVal: number) => {
-    const currentCost = costsInput[field] ?? 0;
+  const handleMarkupChange = (field: any, markupVal: number) => {
+    if (typeof field === "string" && field.startsWith("custom_")) {
+      setCustomProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === field) {
+            return {
+              ...p,
+              markup: markupVal,
+              price: Number(((p.cost || 0) + markupVal).toFixed(2)),
+            };
+          }
+          return p;
+        })
+      );
+      return;
+    }
+
+    const currentCost = costsInput[field as keyof Prices] ?? 0;
     const newPrice = Number((currentCost + markupVal).toFixed(2));
     setPricesInput((prev) => ({ ...prev, [field]: newPrice }));
   };
 
-  const handlePriceChange = (field: keyof Prices, val: number) => {
+  const handlePriceChange = (field: any, val: number) => {
+    if (typeof field === "string" && field.startsWith("custom_")) {
+      setCustomProducts((prev) =>
+        prev.map((p) => {
+          if (p.id === field) {
+            const cost = p.cost || 0;
+            return {
+              ...p,
+              price: val,
+              markup: Math.max(0, Number((val - cost).toFixed(2))),
+            };
+          }
+          return p;
+        })
+      );
+      return;
+    }
+
     setPricesInput((prev) => ({ ...prev, [field]: val }));
   };
 
   const handleWeightChange = (field: keyof Weights, val: number) => {
     setWeightsInput((prev) => ({ ...prev, [field]: val }));
+  };
+
+  const handleCustomWeightChange = (productId: string, val: number) => {
+    setCustomProducts((prev) =>
+      prev.map((p) => (p.id === productId ? { ...p, weight: val } : p))
+    );
+  };
+
+  // Add a new custom product to the catalog
+  const handleAddProduct = (newProd: CustomProduct) => {
+    const nextCustom = [...customProducts, newProd];
+    const nextDeleted = deletedItemIds.filter((id) => id !== newProd.id);
+    setCustomProducts(nextCustom);
+    setDeletedItemIds(nextDeleted);
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          customProducts: nextCustom,
+          deletedItemIds: nextDeleted,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      customProducts: activeObj.customProducts || nextCustom,
+      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+
+    showNotify(`เพิ่มรายการสินค้า "${newProd.name}" เข้าสู่ระบบเรียบร้อย! 📦✨`);
+  };
+
+  // Delete a product (standard or custom) from the active catalog
+  const handleDeleteProduct = (productId: string, productName: string) => {
+    const nextCustom = customProducts.filter((p) => p.id !== productId);
+    const nextDeleted = deletedItemIds.includes(productId) ? deletedItemIds : [...deletedItemIds, productId];
+
+    setCustomProducts(nextCustom);
+    setDeletedItemIds(nextDeleted);
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          customProducts: nextCustom,
+          deletedItemIds: nextDeleted,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      customProducts: activeObj.customProducts || nextCustom,
+      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+
+    showNotify(`ลบรายการสินค้า "${productName}" ออกจากระบบแล้ว 🗑️`);
+  };
+
+  // Restore a previously deleted product
+  const handleRestoreProduct = (productId: string) => {
+    const nextDeleted = deletedItemIds.filter((id) => id !== productId);
+    setDeletedItemIds(nextDeleted);
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          deletedItemIds: nextDeleted,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      customProducts: activeObj.customProducts || customProducts,
+      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+
+    showNotify("กู้คืนรายการสินค้ากลับเข้าสู่ระบบเรียบร้อย! 🔄✨");
   };
 
   // Bulk profit markup tool
@@ -802,6 +979,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
           prices: pricesInput,
           costs: costsInput,
           weights: weightsInput,
+          customProducts,
+          deletedItemIds,
           updatedAt: new Date().toISOString(),
         };
       }
@@ -817,6 +996,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       prices: activeObj.prices,
       costs: activeObj.costs,
       weights: activeObj.weights,
+      customProducts: activeObj.customProducts || customProducts,
+      deletedItemIds: activeObj.deletedItemIds || deletedItemIds,
     };
 
     setSettings(updatedSettings);
@@ -1868,6 +2049,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 <Scale size={15} />
                 <span>⚖️ พิกัดน้ำหนักบรรทุก (กก.)</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setActivePriceWeightTab("cloud")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all ${
+                  activePriceWeightTab === "cloud"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60"
+                }`}
+              >
+                <Cloud size={15} />
+                <span>☁️ ตรวจสอบระบบคลาวด์</span>
+              </button>
             </div>
 
             <div className="text-xs text-neutral-500 font-medium">
@@ -1881,10 +2074,18 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
               <SupplierPricingSection
                 pricesInput={pricesInput}
                 costsInput={costsInput}
+                customProducts={customProducts}
+                deletedItemIds={deletedItemIds}
                 onPriceChange={handlePriceChange}
                 onCostChange={handleCostChange}
                 onMarkupChange={handleMarkupChange}
                 onApplyBulkMarkup={handleApplyBulkMarkup}
+                onOpenAddModal={(cat) => {
+                  setAddProductCategory(cat || "other");
+                  setIsAddProductModalOpen(true);
+                }}
+                onDeleteProduct={handleDeleteProduct}
+                onRestoreProduct={handleRestoreProduct}
               />
             </div>
           )}
@@ -1894,9 +2095,16 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
             <div className="bg-white rounded-3xl p-5 sm:p-6 border border-neutral-200/80 shadow-xs">
               <SupplierWeightsSection
                 weightsInput={weightsInput}
+                customProducts={customProducts}
                 onWeightChange={handleWeightChange}
+                onCustomWeightChange={handleCustomWeightChange}
               />
             </div>
+          )}
+
+          {/* Cloud Diagnostic Tab */}
+          {activePriceWeightTab === "cloud" && (
+            <CloudSystemStatusCard settings={settings} />
           )}
         </div>
 
@@ -2029,6 +2237,14 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
           </div>
         )}
       </AnimatePresence>
+
+      {/* Add Custom Product Modal */}
+      <AddProductModal
+        isOpen={isAddProductModalOpen}
+        onClose={() => setIsAddProductModalOpen(false)}
+        onAddProduct={handleAddProduct}
+        defaultCategory={addProductCategory}
+      />
 
       {/* 5. HIDDEN DOCUMENT FOR JPG REPORT GENERATION */}
       <div className="absolute" style={{ position: "absolute", left: "-9999px", top: "-9999px", width: "840px", height: "auto", overflow: "visible" }}>

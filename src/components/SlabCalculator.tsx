@@ -117,8 +117,31 @@ export default function SlabCalculator({
   const calcCustomPrice = customPrice === "" ? 0 : customPrice;
   const calcTotalArea = totalArea === "" ? 0 : totalArea;
 
+  const customSlabs = (settings.customProducts || []).filter(
+    (cp) => cp.category === "slabs" && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+  const selectedCustomSlab = customSlabs.find((cp) => cp.id === boardType);
+
   let step = 0;
-  if (boardType === "normal" || boardType === "custom") {
+  if (selectedCustomSlab) {
+    const basePrice = selectedCustomSlab.price;
+    const isMoc = selectedCustomSlab.isTIS;
+    if (!isMoc) {
+      if (wireCount === "4") step = basePrice;
+      else if (wireCount === "5") step = basePrice + 10;
+      else if (wireCount === "6") step = basePrice + 20;
+      else if (wireCount === "7") step = basePrice + 35;
+      else if (wireCount === "8") step = basePrice + 55;
+      else if (wireCount === "5_mm_5") step = basePrice + 55;
+    } else {
+      if (wireCount === "4") step = basePrice;
+      else if (wireCount === "5") step = basePrice + 15;
+      else if (wireCount === "6") step = basePrice + 30;
+      else if (wireCount === "7") step = basePrice + 50;
+      else if (wireCount === "8") step = basePrice + 75;
+      else if (wireCount === "5_mm_5") step = basePrice + 75;
+    }
+  } else if (boardType === "normal" || boardType === "custom") {
     const basePrice = boardType === "custom" ? calcCustomPrice : settings.prices.normalBoardPrice;
     if (wireCount === "4") step = basePrice;
     else if (wireCount === "5") step = basePrice + 10;
@@ -141,7 +164,7 @@ export default function SlabCalculator({
   const boardArea = 0.35 * calcLength;
   const boardCount = boardArea > 0 ? Math.ceil(calcTotalArea / boardArea) : 0;
 
-  const weightPerMeter = settings.weights.slab;
+  const weightPerMeter = selectedCustomSlab?.weight ? selectedCustomSlab.weight : settings.weights.slab;
   const totalWeight = weightPerMeter * calcLength * boardCount;
 
   const loadCapacity = getLoadCapacity(calcLength, wireCount);
@@ -882,10 +905,19 @@ const parseSlabsTextClientSide = (
                         onChange={(e) => setBoardType(e.target.value)}
                         className="w-full p-3 bg-neutral-50 hover:bg-neutral-100 transition border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200"
                       >
-                        <option value="normal">แผ่นพื้นธรรมดา</option>
-                        <option value="m.o.c">แผ่นพื้น มอก. (TIS)</option>
-                        <option value="custom">แผ่นพื้นธรรมดา (กำหนดราคาเอง)</option>
-                        <option value="m.o.c_custom">แผ่นพื้น มอก. (กำหนดราคาเอง)</option>
+                        {!settings.deletedItemIds?.includes("normalBoardPrice") && (
+                          <option value="normal">แผ่นพื้นธรรมดา (฿{fmt(settings.prices.normalBoardPrice)}/ตร.ม.)</option>
+                        )}
+                        {!settings.deletedItemIds?.includes("mocBoardPrice") && (
+                          <option value="m.o.c">แผ่นพื้น มอก. TIS (฿{fmt(settings.prices.mocBoardPrice)}/ตร.ม.)</option>
+                        )}
+                        {customSlabs.map((cs) => (
+                          <option key={cs.id} value={cs.id}>
+                            ⭐ [กำหนดเอง] {cs.name} {cs.subLabel ? `(${cs.subLabel})` : ""} - ฿{fmt(cs.price)}/ตร.ม.
+                          </option>
+                        ))}
+                        <option value="custom">แผ่นพื้นธรรมดา (กำหนดราคาเองชั่วคราว)</option>
+                        <option value="m.o.c_custom">แผ่นพื้น มอก. (กำหนดราคาเองชั่วคราว)</option>
                       </select>
                     </div>
 

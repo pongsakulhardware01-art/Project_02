@@ -1,7 +1,8 @@
-import { Dispatch, SetStateAction, useState } from "react";
+import { Dispatch, SetStateAction, useState, useMemo } from "react";
 import { AppSettings, WeightItem } from "../types";
 import { weightOptions, truckCapacities } from "../data";
 import { fmt, getTruckAllocationOptions, TruckOption } from "../utils";
+import { getDynamicWeightOptions } from "../utils/productCatalog";
 import SupplierQuickSelector from "./SupplierQuickSelector";
 import DeliveryDistanceWidget from "./DeliveryDistanceWidget";
 import { 
@@ -39,21 +40,36 @@ export default function WeightCalculator({
   onSelectSupplier, 
   onNavigateToSettings 
 }: WeightCalculatorProps) {
+  const dynamicOptions = useMemo(() => {
+    return getDynamicWeightOptions(settings);
+  }, [settings]);
+
   const getWeightPerMeter = (typeValue: string): number => {
+    const dyn = dynamicOptions.find((o) => o.value === typeValue);
+    if (dyn) return dyn.weight || 0;
     const opt = weightOptions.find((o) => o.value === typeValue);
     if (!opt) return 0;
     return settings.weights[opt.weightKey] || 0;
   };
 
   const getLabel = (typeValue: string): string => {
+    const dyn = dynamicOptions.find((o) => o.value === typeValue);
+    if (dyn) return dyn.label;
     const opt = weightOptions.find((o) => o.value === typeValue);
     return opt ? opt.label : "";
   };
 
+  const isPerPiece = (typeValue: string): boolean => {
+    const dyn = dynamicOptions.find((o) => o.value === typeValue);
+    if (dyn) return dyn.isPerPiece;
+    return typeValue.startsWith("pipe") || typeValue.startsWith("basin");
+  };
+
   const addItem = () => {
+    const defaultType = dynamicOptions.length > 0 ? dynamicOptions[0].value : "slab";
     const newItem: WeightItem = {
       id: Math.random().toString(36).substring(2, 9),
-      type: "slab",
+      type: defaultType,
       count: 10,
       length: 2.0,
       unitWeight: undefined,
@@ -74,7 +90,7 @@ export default function WeightCalculator({
   const calculateItemWeight = (item: WeightItem): number => {
     const rawWPerMeter = item.unitWeight !== undefined ? item.unitWeight : getWeightPerMeter(item.type);
     const wPerMeter = rawWPerMeter === "" ? 0 : rawWPerMeter;
-    const isPerPieceItem = item.type.startsWith("pipe") || item.type.startsWith("basin");
+    const isPerPieceItem = isPerPiece(item.type);
     const len = isPerPieceItem ? 1.0 : (item.length === "" ? 0 : item.length);
     const cnt = item.count === "" ? 0 : item.count;
     return wPerMeter * len * cnt;
@@ -158,14 +174,15 @@ export default function WeightCalculator({
                 </div>
               ) : (
                 items.map((item, index) => {
-                  const isPerPieceItem = item.type.startsWith("pipe") || item.type.startsWith("basin");
+                  const isPerPieceItem = isPerPiece(item.type);
                   const rawWPerMeter = item.unitWeight !== undefined ? item.unitWeight : getWeightPerMeter(item.type);
                   const wPerMeter = rawWPerMeter === "" ? 0 : rawWPerMeter;
                   const itemLen = isPerPieceItem ? 1.0 : (item.length === "" ? 0 : item.length);
                   const itemCnt = item.count === "" ? 0 : item.count;
                   const itemWeight = wPerMeter * itemLen * itemCnt;
 
-                  const unitText = item.type.startsWith("pipe") ? "กก./ท่อน" : (item.type.startsWith("basin") ? "กก./บ่อ" : "กก./ม.");
+                  const currentOpt = dynamicOptions.find((o) => o.value === item.type);
+                  const unitText = currentOpt ? currentOpt.weightUnit : (item.type.startsWith("pipe") ? "กก./ท่อน" : (item.type.startsWith("basin") ? "กก./บ่อ" : "กก./ม."));
 
                   return (
                     <motion.div
@@ -193,11 +210,11 @@ export default function WeightCalculator({
                                 )
                               );
                             }}
-                            className="bg-transparent border-0 hover:bg-neutral-150 rounded px-2 py-1 font-semibold text-neutral-800 text-sm focus:outline-none focus:ring-1 focus:ring-red-300"
+                            className="bg-transparent border-0 hover:bg-neutral-150 rounded px-2 py-1 font-semibold text-neutral-800 text-sm focus:outline-none focus:ring-1 focus:ring-red-300 max-w-[280px] sm:max-w-xs truncate"
                           >
-                            {weightOptions.map((opt) => (
+                            {dynamicOptions.map((opt) => (
                               <option key={opt.value} value={opt.value}>
-                                {opt.label}
+                                {opt.label} ({opt.weight} {opt.weightUnit})
                               </option>
                             ))}
                           </select>

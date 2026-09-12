@@ -56,3 +56,17 @@ h1, h2, h3, h4, th, .font-display {
   0% { transform: translateY(0); }
   100% { transform: translateY(-4px); }
 }
+
+/* Hide scrollbar for clean horizontal tab bars on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe area inset for modern mobile screens */
+.safe-pb {
+  padding-bottom: env(safe-area-inset-bottom, 12px);
+}

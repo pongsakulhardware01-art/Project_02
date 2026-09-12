@@ -172,6 +172,21 @@ export interface DeliveryConfig {
   availableTrucks?: SupplierTruck[]; // รายการรถและพิกัดน้ำหนักที่ซัพพลายเออร์มีให้บริการ
 }
 
+export interface CustomProduct {
+  id: string; // e.g. "custom_172609..."
+  name: string; // ชื่อรายการสินค้า
+  subLabel?: string; // รายละเอียดเพิ่มเติม / สเปก
+  category: "slabs" | "hex_fence" | "i_piles" | "s_piles" | "pipes" | "basins" | "other";
+  unit: string; // เช่น "บ./ตร.ม.", "บ./ม.", "บ./ท่อน", "บ./ชิ้น", "บ./ชุด"
+  cost: number; // ต้นทุน (บาท)
+  price: number; // ราคาขาย (บาท)
+  markup?: number; // ส่วนต่างกำไร (บาท)
+  weight: number; // น้ำหนัก (กก.)
+  weightUnit: string; // หน่วยน้ำหนัก เช่น "กก./ม.", "กก./ตร.ม.", "กก./ท่อน", "กก./ชิ้น"
+  isTIS?: boolean; // สเปก มอก. หรือไม่
+  createdAt?: string;
+}
+
 export interface SupplierProfile {
   id: string;
   name: string;
@@ -186,6 +201,8 @@ export interface SupplierProfile {
   prices: Prices;
   costs?: Partial<Prices>;
   weights: Weights;
+  customProducts?: CustomProduct[]; // รายการสินค้าที่ผู้ใช้เพิ่มเอง
+  deletedItemIds?: string[]; // รายการสินค้าที่ผู้ใช้ลบทิ้ง (ซ่อนจากการคำนวณ)
   createdAt?: string;
   updatedAt?: string;
 }
@@ -204,6 +221,8 @@ export interface AppSettings {
   prices: Prices;
   costs?: Partial<Prices>;
   weights: Weights;
+  customProducts?: CustomProduct[]; // รายการสินค้าที่ผู้ใช้เพิ่มเองของซัพพลายเออร์ที่เลือก
+  deletedItemIds?: string[]; // รายการสินค้าที่ถูกลบทิ้ง
   defaultDestination?: DeliveryDestination;
 }
 

@@ -1,19 +1,22 @@
 import React from "react";
 import { Prices } from "../types";
-import { Plus, Equal, Tag, Sparkles, HelpCircle } from "lucide-react";
+import { Plus, Equal, Tag, Sparkles, HelpCircle, Trash2 } from "lucide-react";
 
 interface PriceCostMarkupItemProps {
+  key?: React.Key;
   idPrefix: string;
   label: string;
   subLabel?: string;
-  field: keyof Prices;
+  field?: keyof Prices | string;
   unit: string;
   cost: number;
   price: number;
   isTIS?: boolean;
-  onCostChange: (field: keyof Prices, val: number) => void;
-  onMarkupChange: (field: keyof Prices, val: number) => void;
-  onPriceChange: (field: keyof Prices, val: number) => void;
+  isCustom?: boolean;
+  onCostChange: (field: any, val: number) => void;
+  onMarkupChange: (field: any, val: number) => void;
+  onPriceChange: (field: any, val: number) => void;
+  onDelete?: () => void;
 }
 
 export function PriceCostMarkupItem({
@@ -25,9 +28,11 @@ export function PriceCostMarkupItem({
   cost,
   price,
   isTIS = false,
+  isCustom = false,
   onCostChange,
   onMarkupChange,
   onPriceChange,
+  onDelete,
 }: PriceCostMarkupItemProps) {
   const currentCost = cost || 0;
   const currentPrice = price || 0;
@@ -36,19 +41,23 @@ export function PriceCostMarkupItem({
     ? (((currentPrice - currentCost) / currentCost) * 100).toFixed(1)
     : "0.0";
 
+  const targetField = field || idPrefix;
+
   return (
     <div
       id={`item-card-${idPrefix}`}
-      className={`rounded-2xl p-3.5 border transition-all duration-200 ${
+      className={`rounded-2xl p-3.5 border transition-all duration-200 relative group ${
         isTIS
           ? "bg-gradient-to-br from-red-50/40 via-white to-red-50/20 border-red-200/80 shadow-xs"
+          : isCustom
+          ? "bg-gradient-to-br from-purple-50/30 via-white to-indigo-50/20 border-purple-200/90 shadow-xs"
           : "bg-white border-neutral-200/90 shadow-xs hover:border-neutral-300"
       }`}
     >
-      {/* Header with Title & Badges */}
-      <div className="flex items-center justify-between gap-2 mb-2.5">
+      {/* Header with Title, Badges & Delete Button */}
+      <div className="flex items-start justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-xs font-bold ${isTIS ? "text-[#C62828]" : "text-neutral-800"}`}>
+          <span className={`text-xs font-bold ${isTIS ? "text-[#C62828]" : isCustom ? "text-purple-900" : "text-neutral-800"}`}>
             {label}
           </span>
           {isTIS && (
@@ -56,13 +65,32 @@ export function PriceCostMarkupItem({
               มอก.
             </span>
           )}
+          {isCustom && (
+            <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
+              กำหนดเอง
+            </span>
+          )}
           {subLabel && (
             <span className="text-[11px] text-neutral-400 font-medium">({subLabel})</span>
           )}
         </div>
-        <span className="text-[11px] font-mono text-neutral-500 bg-neutral-100/80 px-2 py-0.5 rounded-full shrink-0 font-semibold">
-          {unit}
-        </span>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-mono text-neutral-500 bg-neutral-100/80 px-2 py-0.5 rounded-full font-semibold">
+            {unit}
+          </span>
+
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              title="ลบรายการสินค้านี้"
+              className="p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 3 Interactive Columns: Cost + Markup = Selling Price */}
@@ -86,7 +114,7 @@ export function PriceCostMarkupItem({
               value={currentCost === 0 ? "" : currentCost}
               onChange={(e) => {
                 const val = Math.max(0, parseFloat(e.target.value) || 0);
-                onCostChange(field, val);
+                onCostChange(targetField, val);
               }}
               placeholder="0"
               className="w-full pl-6 pr-2 py-1.5 bg-neutral-50/80 border border-neutral-200 rounded-xl text-xs font-bold font-mono text-neutral-800 focus:bg-white focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300 outline-none transition"
@@ -118,7 +146,7 @@ export function PriceCostMarkupItem({
               value={markup === 0 ? "" : markup}
               onChange={(e) => {
                 const val = Math.max(0, parseFloat(e.target.value) || 0);
-                onMarkupChange(field, val);
+                onMarkupChange(targetField, val);
               }}
               placeholder="0"
               className="w-full pl-6 pr-2 py-1.5 bg-emerald-50/40 border border-emerald-300/70 rounded-xl text-xs font-bold font-mono text-emerald-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-300 outline-none transition"
@@ -145,7 +173,7 @@ export function PriceCostMarkupItem({
               value={currentPrice === 0 ? "" : currentPrice}
               onChange={(e) => {
                 const val = Math.max(0, parseFloat(e.target.value) || 0);
-                onPriceChange(field, val);
+                onPriceChange(targetField, val);
               }}
               placeholder="0"
               className="w-full pl-6 pr-2 py-1.5 bg-red-50/40 border border-red-300/80 rounded-xl text-xs font-extrabold font-mono text-[#8B0000] focus:bg-white focus:border-[#C62828] focus:ring-1 focus:ring-red-300 outline-none transition shadow-2xs"

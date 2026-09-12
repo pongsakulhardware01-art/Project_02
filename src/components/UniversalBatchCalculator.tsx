@@ -65,6 +65,16 @@ export default function UniversalBatchCalculator({
   // Items in the table state
   const [items, setItems] = useState<UniversalBatchItem[]>([]);
 
+  const customSlabs = (settings.customProducts || []).filter(
+    (cp) => cp.category === "slabs" && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+  const customPiles = (settings.customProducts || []).filter(
+    (cp) => (cp.category === "i_piles" || cp.category === "s_piles" || cp.category === "hex_fence") && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+  const customDrainage = (settings.customProducts || []).filter(
+    (cp) => (cp.category === "pipes" || cp.category === "basins") && !(settings.deletedItemIds || []).includes(cp.id)
+  );
+
   // Pricing & rounding state
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
     return localStorage.getItem("pongsakulAutoRoundPrice") === "true";
@@ -581,8 +591,12 @@ export default function UniversalBatchCalculator({
     let defaultStandardRate = 0;
     let standardRateUnit = "ม.";
 
-    // SLA CATEGORY
-    if (item.category === "slab") {
+    const customProd = settings.customProducts?.find((cp) => cp.id === item.model);
+    if (customProd) {
+      baseWeightPerMeter = customProd.weight || 0;
+      defaultStandardRate = customProd.price || 0;
+      standardRateUnit = customProd.unit || "ม.";
+    } else if (item.category === "slab") {
       baseWeightPerMeter = settings.weights.slab;
       standardRateUnit = "ตร.ม.";
       
@@ -730,7 +744,15 @@ export default function UniversalBatchCalculator({
 
     // Calculate normal unit price for single piece from rate
     let rawUnitPriceOfProduct = 0;
-    if (item.category === "slab") {
+    if (customProd) {
+      if (customProd.unit === "ตร.ม.") {
+        rawUnitPriceOfProduct = 0.35 * standardRate * len;
+      } else if (customProd.unit === "ชิ้น" || customProd.unit === "ท่อน" || customProd.unit === "ต้น") {
+        rawUnitPriceOfProduct = standardRate;
+      } else {
+        rawUnitPriceOfProduct = standardRate * len;
+      }
+    } else if (item.category === "slab") {
       rawUnitPriceOfProduct = 0.35 * standardRate * len;
     } else if (item.category === "hollow_core") {
       const hcWidthVal = item.hcWidth || 0.35;
@@ -756,7 +778,9 @@ export default function UniversalBatchCalculator({
       ? Number(item.customWeightPerMeter)
       : baseWeightPerMeter;
       
-    const rowWeightTotal = finalWeightPerMeter * (item.category === "drainage" ? 1 : len) * qty;
+    const rowWeightTotal = customProd && (customProd.weightUnit === "กก./ชิ้น" || customProd.weightUnit === "กก./ท่อน" || customProd.weightUnit === "กก./ต้น")
+      ? finalWeightPerMeter * qty
+      : finalWeightPerMeter * (item.category === "drainage" ? 1 : len) * qty;
 
     // Calc areas
     let areaMultiplier = 0;
@@ -799,7 +823,9 @@ export default function UniversalBatchCalculator({
     const freshLogistics: WeightItem[] = calculatedRows.map((row) => {
       // mapping type strings appropriately
       let typeSlug = "slab";
-      if (row.category === "pile") {
+      if (row.model.startsWith("custom_")) {
+        typeSlug = row.model;
+      } else if (row.category === "pile") {
         if (row.model.startsWith("fence")) typeSlug = "fence3";
         else if (row.model === "hex") typeSlug = "hex";
         else typeSlug = "i18_no_tis";
@@ -846,6 +872,10 @@ export default function UniversalBatchCalculator({
   };
 
   const getModelLabelTh = (category: string, model: string) => {
+    if (model.startsWith("custom_")) {
+      const cp = settings.customProducts?.find((p) => p.id === model);
+      if (cp) return `⭐ ${cp.name} ${cp.subLabel ? `(${cp.subLabel})` : ""}`;
+    }
     if (category === "slab") {
       return model === "m.o.c" ? "รุ่นมาตรฐาน มอก." : "รุ่นสามัญธรรมดา";
     }
@@ -1205,8 +1235,19 @@ export default function UniversalBatchCalculator({
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
                               className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
-                              <option value="normal">แผ่นพื้นสำเร็จธรรมดา</option>
-                              <option value="m.o.c">แผ่นพื้นสำเร็จ มอก. (TIS)</option>
+                              {customSlabs.length > 0 && (
+                                <optgroup label="⭐ แผ่นพื้นกำหนดเอง (Custom Slabs)">
+                                  {customSlabs.map((cs) => (
+                                    <option key={cs.id} value={cs.id}>
+                                      ⭐ {cs.name} {cs.subLabel ? `(${cs.subLabel})` : ""}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <optgroup label="แผ่นพื้นมาตรฐาน">
+                                <option value="normal">แผ่นพื้นสำเร็จธรรมดา</option>
+                                <option value="m.o.c">แผ่นพื้นสำเร็จ มอก. (TIS)</option>
+                              </optgroup>
                             </select>
                           )}
 
@@ -1216,6 +1257,15 @@ export default function UniversalBatchCalculator({
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
                               className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
+                              {customPiles.length > 0 && (
+                                <optgroup label="⭐ เสาเข็ม/เสารั้วกำหนดเอง">
+                                  {customPiles.map((cp) => (
+                                    <option key={cp.id} value={cp.id}>
+                                      ⭐ {cp.name} {cp.subLabel ? `(${cp.subLabel})` : ""}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
                               <optgroup label="เสาเข็มไอ">
                                 <option value="i15">เสาเข็มไอ I-15</option>
                                 <option value="i18">เสาเข็มไอ I-18</option>
@@ -1253,6 +1303,15 @@ export default function UniversalBatchCalculator({
                               onChange={(e) => editLineItem(row.id, "model", e.target.value)}
                               className="p-2 bg-[#FAF7F6] hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-semibold text-xs w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
                             >
+                              {customDrainage.length > 0 && (
+                                <optgroup label="⭐ ท่อ/บ่อพักกำหนดเอง">
+                                  {customDrainage.map((cd) => (
+                                    <option key={cd.id} value={cd.id}>
+                                      ⭐ {cd.name} {cd.subLabel ? `(${cd.subLabel})` : ""}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
                               <optgroup label="ท่อระบายน้ำ คสล.">
                                 <option value="pipe030">ท่อระบายน้ำ Ø 0.30 ม.</option>
                                 <option value="pipe040">ท่อระบายน้ำ Ø 0.40 ม.</option>

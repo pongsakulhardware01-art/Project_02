@@ -1,24 +1,85 @@
 import React from "react";
-import { Weights } from "../types";
-import { Scale } from "lucide-react";
+import { Weights, CustomProduct } from "../types";
+import { Scale, Package, Sparkles } from "lucide-react";
 
 interface SupplierWeightsSectionProps {
   weightsInput: Weights;
+  customProducts?: CustomProduct[];
   onWeightChange: (field: keyof Weights, val: number) => void;
+  onCustomWeightChange?: (id: string, val: number) => void;
 }
 
 export function SupplierWeightsSection({
   weightsInput,
+  customProducts = [],
   onWeightChange,
+  onCustomWeightChange,
 }: SupplierWeightsSectionProps) {
   return (
     <div className="bg-neutral-50/40 rounded-2xl p-5 border border-neutral-200/80 space-y-4">
-      <div className="flex items-center gap-2 pb-3 border-b border-neutral-200">
-        <div className="p-1.5 bg-amber-50 text-amber-700 rounded-lg">
-          <Scale size={16} />
+      <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-amber-50 text-amber-700 rounded-lg">
+            <Scale size={16} />
+          </div>
+          <div>
+            <h4 className="font-bold text-neutral-800 text-base">พิกัดน้ำหนักจริงของซัพพลายเออร์นี้ (กก.)</h4>
+            <p className="text-xs text-neutral-400">ใช้สำหรับวิเคราะห์การรับน้ำหนักรถบรรทุกและจัดสรรเที่ยวรถอัตโนมัติ</p>
+          </div>
         </div>
-        <h4 className="font-bold text-neutral-800 text-base">พิกัดน้ำหนักจริงของซัพพลายเออร์นี้ (กก.)</h4>
+
+        {customProducts.length > 0 && (
+          <span className="text-xs font-bold bg-purple-100 text-purple-700 px-2.5 py-1 rounded-full">
+            สินค้ากำหนดเอง {customProducts.length} รายการ
+          </span>
+        )}
       </div>
+
+      {/* Custom Products Weights Section (if any) */}
+      {customProducts.length > 0 && (
+        <div className="bg-purple-50/40 rounded-2xl p-4 border border-purple-200/70 space-y-3">
+          <div className="flex items-center gap-2">
+            <Package size={15} className="text-purple-600" />
+            <h5 className="font-extrabold text-xs text-purple-900 uppercase tracking-wide">
+              พิกัดน้ำหนักสินค้าสั่งทำ / กำหนดเอง (กก. ต่อหน่วย)
+            </h5>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {customProducts.map((p) => (
+              <div key={p.id} className="bg-white p-3 rounded-xl border border-purple-200/60 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-neutral-800 truncate" title={p.name}>
+                    {p.name}
+                  </span>
+                  <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-mono">
+                    {p.weightUnit || "กก./ชิ้น"}
+                  </span>
+                </div>
+                {p.subLabel && <p className="text-[10px] text-neutral-400 truncate">{p.subLabel}</p>}
+                <div className="relative mt-1">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={p.weight || ""}
+                    onChange={(e) => {
+                      if (onCustomWeightChange) {
+                        onCustomWeightChange(p.id, Math.max(0, parseFloat(e.target.value) || 0));
+                      }
+                    }}
+                    placeholder="0.0"
+                    className="w-full bg-neutral-50 border border-neutral-200 focus:bg-white focus:border-purple-400 py-1 px-2.5 rounded-lg text-xs font-bold font-mono text-neutral-800 outline-none"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-400 font-medium">
+                    กก.
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {/* 1. Slab, Fence, Hex */}
