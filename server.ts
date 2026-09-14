@@ -392,15 +392,28 @@ async function startServer() {
             }
           ];
 
-      // Ensure each supplier in the array has all required price/cost/weight keys
-      suppliers = suppliers.map((sup: any) => ({
-        ...sup,
-        prices: { ...defaultUpdatedSettings.prices, ...(sup.prices || {}) },
-        costs: { ...defaultUpdatedSettings.costs, ...(sup.costs || {}) },
-        weights: { ...defaultUpdatedSettings.weights, ...(sup.weights || {}) },
-      }));
+      // Ensure each supplier in the array has all required price/cost/weight keys,
+      // and sanitize deletedItemIds so standard products are not accidentally blacklisted
+      suppliers = suppliers.map((sup: any) => {
+        let cleanedDeleted = Array.isArray(sup.deletedItemIds) ? sup.deletedItemIds : [];
+        if (cleanedDeleted.includes("normalBoardPrice")) {
+          cleanedDeleted = cleanedDeleted.filter((id: string) => id.startsWith("custom_"));
+        }
+        return {
+          ...sup,
+          prices: { ...defaultUpdatedSettings.prices, ...(sup.prices || {}) },
+          costs: { ...defaultUpdatedSettings.costs, ...(sup.costs || {}) },
+          weights: { ...defaultUpdatedSettings.weights, ...(sup.weights || {}) },
+          deletedItemIds: cleanedDeleted,
+        };
+      });
 
       const activeSupplier = suppliers.find((s: any) => s.id === activeId) || suppliers[0];
+
+      let topDeleted = Array.isArray(activeSupplier?.deletedItemIds) ? activeSupplier.deletedItemIds : [];
+      if (topDeleted.includes("normalBoardPrice")) {
+        topDeleted = topDeleted.filter((id: string) => id.startsWith("custom_"));
+      }
 
       currentSettings = {
         activeSupplierId: activeSupplier ? activeSupplier.id : "pongsakul_main",
@@ -408,8 +421,8 @@ async function startServer() {
         prices: activeSupplier ? activeSupplier.prices : defaultUpdatedSettings.prices,
         costs: activeSupplier ? activeSupplier.costs : defaultUpdatedSettings.costs,
         weights: activeSupplier ? activeSupplier.weights : defaultUpdatedSettings.weights,
-        customProducts: Array.isArray(currentSettings.customProducts) ? currentSettings.customProducts : [],
-        deletedItemIds: Array.isArray(currentSettings.deletedItemIds) ? currentSettings.deletedItemIds : [],
+        customProducts: Array.isArray(activeSupplier?.customProducts) ? activeSupplier.customProducts : (Array.isArray(currentSettings.customProducts) ? currentSettings.customProducts : []),
+        deletedItemIds: topDeleted,
         defaultDestination: currentSettings.defaultDestination || undefined,
       };
       console.log("Migrated and synchronized multi-supplier settings schema");
@@ -439,6 +452,30 @@ async function startServer() {
   // Call the initializer
   await loadAndInitializeSettings();
 
+  // Helper to sanitize settings so standard products are not mistakenly blacklisted
+  const sanitizeSettings = (data: any) => {
+    if (!data || typeof data !== "object") return data;
+    let cleanedDeleted = Array.isArray(data.deletedItemIds) ? data.deletedItemIds : [];
+    if (cleanedDeleted.includes("normalBoardPrice")) {
+      cleanedDeleted = cleanedDeleted.filter((id: string) => id.startsWith("custom_"));
+    }
+    let cleanedSuppliers = Array.isArray(data.suppliers)
+      ? data.suppliers.map((s: any) => {
+          let supDeleted = Array.isArray(s.deletedItemIds) ? s.deletedItemIds : [];
+          if (supDeleted.includes("normalBoardPrice")) {
+            supDeleted = supDeleted.filter((id: string) => id.startsWith("custom_"));
+          }
+          return { ...s, deletedItemIds: supDeleted };
+        })
+      : data.suppliers;
+
+    return {
+      ...data,
+      suppliers: cleanedSuppliers,
+      deletedItemIds: cleanedDeleted,
+    };
+  };
+
   // Set up real-time listener on settings in Firestore to update cachedSettings instantly across multiple server container instances
   if (db) {
     try {
@@ -447,8 +484,12 @@ async function startServer() {
           const freshData = docSnapshot.data();
           // Ensure it matches AppSettings structure approximately
           if (freshData && (freshData.prices || freshData.suppliers)) {
-            cachedSettings = freshData;
+            const cleaned = sanitizeSettings(freshData);
+            cachedSettings = cleaned;
             console.log("Real-time settings updated from Firestore successfully.");
+            if (Array.isArray(freshData.deletedItemIds) && freshData.deletedItemIds.includes("normalBoardPrice")) {
+              setDoc(doc(db, "settings", "config"), cleaned).catch(() => {});
+            }
             try {
               fs.writeFileSync(dbPath, JSON.stringify(cachedSettings, null, 2), "utf-8");
             } catch (err) {
@@ -476,7 +517,15 @@ async function startServer() {
       try {
         const settingsDoc = await getDoc(doc(db, "settings", "config"));
         if (settingsDoc.exists()) {
-          cachedSettings = settingsDoc.data();
+          const raw = settingsDoc.data();
+          const cleaned = sanitizeSettings(raw);
+          cachedSettings = cleaned;
+          if (Array.isArray(raw.deletedItemIds) && raw.deletedItemIds.includes("normalBoardPrice")) {
+            setDoc(doc(db, "settings", "config"), cleaned).catch(() => {});
+            try {
+              fs.writeFileSync(dbPath, JSON.stringify(cleaned, null, 2), "utf-8");
+            } catch (err) {}
+          }
           return res.json(cachedSettings);
         }
       } catch (e) {
@@ -493,7 +542,7 @@ async function startServer() {
     if (fs.existsSync(dbPath)) {
       try {
         const data = fs.readFileSync(dbPath, "utf-8");
-        cachedSettings = JSON.parse(data);
+        cachedSettings = sanitizeSettings(JSON.parse(data));
         return res.json(cachedSettings);
       } catch (e) {
         console.error(e);
@@ -893,7 +942,7 @@ async function startServer() {
   // API 7: Scan all concrete products using multimodal Gemini API (Universal Scanner)
   app.post("/api/scan-universal", async (req, res) => {
     try {
-      const { image, mimeType } = req.body;
+      const { image, mimeType, customProducts } = req.body;
       if (!image || !mimeType) {
         return res.status(400).json({ error: "กรุณาส่งไฟล์ภาพและ mimeType เข้ามาในระบบ" });
       }
@@ -916,6 +965,16 @@ async function startServer() {
         },
       };
 
+      let customProdInstruction = "";
+      if (Array.isArray(customProducts) && customProducts.length > 0) {
+        customProdInstruction = 
+          "\n6. Category 'custom': User-registered custom products in catalog (สินค้าที่ผู้ใช้เพิ่มเองในระบบ):\n" +
+          customProducts.map((cp: any) => 
+            `- Model ID: "${cp.id}", ชื่อ: "${cp.name}", สเปก: "${cp.subLabel || ''}", ราคา: ${cp.price} ${cp.unit}, น้ำหนัก: ${cp.weight || 0} ${cp.weightUnit || ''}, หมวด: "${cp.category}"`
+          ).join("\n") +
+          "\nIf an item in the quotation/note matches any of these User-registered custom products (by name or specification), you MUST set category to 'custom' and model to that product's exact Model ID (e.g. '" + customProducts[0].id + "').\n";
+      }
+
       const systemInstruction = 
         "You are an expert material estimator specializing in precast concrete products (แผ่นพื้นสำเร็จรูป, เสาเข็ม, แผ่นกลวง, เสารั้ว, ท่อระบายน้ำ คสล., บ่อพัก คสล.) for construction projects. " +
         "Your task is to analyze the image (handwritten note, table screenshot, quotation bill) and extract ALL concrete items. " +
@@ -927,10 +986,11 @@ async function startServer() {
         "5. Category 'drainage': concrete pipes (ท่อระบายน้ำ คสล.) and catch basins (บ่อพัก คสล.). \n" +
         "   - Pipes: Model MUST be 'pipe030' (30cm / 0.30m), 'pipe040' (40cm), 'pipe050' (50cm), 'pipe060' (60cm), 'pipe080' (80cm), 'pipe100' (100cm), 'pipe120' (120cm), 'pipe150' (150cm). Set tisStandard to 't2' (for มอก.ชั้น 2), 't3' (for มอก.ชั้น 3), or 'no_tis' (ปกติ/คสล.).\n" +
         "   - Catch basins: Model MUST be 'basin030' (for pipe 30cm), 'basin040', 'basin050', 'basin060', 'basin080', 'basin100', 'basin120'. Length of drainage is 1.0.\n" +
+        customProdInstruction +
         "Ignore other construction materials (sand, cement bricks, steel rebars, labor fees) and only extract precast concrete elements manufactured by Pongsakul.";
 
       const prompt = 
-        "Please read this image carefully, extract all concrete slabs, piles, hollow cores, and fence posts lists/rows you can find, and formulate them in the requested JSON structure. " +
+        "Please read this image carefully, extract all concrete slabs, piles, hollow cores, fence posts, drainage pipes/basins, and custom products lists/rows you can find, and formulate them in the requested JSON structure. " +
         "Ensure lengths and counts are always positive numbers, handle unit rates (customPrice) in Baht if listed directly, and provide Thai description labels.";
 
       const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
@@ -955,11 +1015,11 @@ async function startServer() {
                       properties: {
                         category: {
                           type: Type.STRING,
-                          description: "ประเภทหลัก: 'slab', 'pile', 'hollow_core', 'fence', หรือ 'drainage'"
+                          description: "ประเภทหลัก: 'slab', 'pile', 'hollow_core', 'fence', 'drainage', หรือ 'custom'"
                         },
                         model: {
                           type: Type.STRING,
-                          description: "รุ่นโมเดล: สำหรับ slab ('normal','m.o.c'), สำหรับ pile ('i15','i18','i22','i26','i30','s18','s22','s26','s30','s35','s40','hex','fence3','fence4'), สำหรับ hollow_core ('hc'), สำหรับ fence ('fence3','fence4'), สำหรับ drainage ('pipe030','pipe040','pipe050','pipe060','pipe080','pipe100','pipe120','pipe150','basin030','basin040','basin050','basin060','basin080','basin100','basin120')"
+                          description: "รุ่นโมเดล: สำหรับ slab ('normal','m.o.c'), สำหรับ pile ('i15','i18','i22','i26','i30','s18','s22','s26','s30','s35','s40','hex','fence3','fence4'), สำหรับ hollow_core ('hc'), สำหรับ fence ('fence3','fence4'), สำหรับ drainage ('pipe030'..'pipe150', 'basin030'..'basin120'), หรือสำหรับ custom ให้ใส่ Model ID ตรงตามรายการสินค้าที่กำหนดเอง"
                         },
                         length: {
                           type: Type.NUMBER,
@@ -1024,7 +1084,7 @@ async function startServer() {
   // API 8: Parse multi-line descriptions of all concrete products using text-based Gemini API (Universal Text Parser)
   app.post("/api/parse-universal-text", async (req, res) => {
     try {
-      const { text } = req.body;
+      const { text, customProducts } = req.body;
       if (!text) {
         return res.status(400).json({ error: "กรุณาระบุข้อความสเปกในการส่งวิเคราะห์" });
       }
@@ -1040,6 +1100,16 @@ async function startServer() {
         httpOptions: { headers: { "User-Agent": "aistudio-build" } },
       });
 
+      let customProdInstruction = "";
+      if (Array.isArray(customProducts) && customProducts.length > 0) {
+        customProdInstruction = 
+          "\n6. Category 'custom': User-registered custom products in catalog (สินค้าที่ผู้ใช้เพิ่มเองในระบบ):\n" +
+          customProducts.map((cp: any) => 
+            `- Model ID: "${cp.id}", ชื่อ: "${cp.name}", สเปก: "${cp.subLabel || ''}", ราคา: ${cp.price} ${cp.unit}, น้ำหนัก: ${cp.weight || 0} ${cp.weightUnit || ''}, หมวด: "${cp.category}"`
+          ).join("\n") +
+          "\nIf an item in the text matches any of these User-registered custom products (by name or specification), you MUST set category to 'custom' and model to that product's exact Model ID (e.g. '" + customProducts[0].id + "').\n";
+      }
+
       const systemInstruction = 
         "You are an expert material estimator specializing in construction products of Pongsakul Hardware (Thailand). " +
         "Your task is to parse unstructured, multi-line construction material specifications in Thai, extracting ALL matching concrete products into a structured JSON database.\n" +
@@ -1051,6 +1121,7 @@ async function startServer() {
         "5. Category 'drainage': concrete drainage pipes (ท่อระบายน้ำ คสล., ท่อระบายน้ำ มอก.) and catch basins (บ่อพัก คสล.).\n" +
         "   - Pipes: Model MUST be 'pipe030' (diameter 30cm or 0.30m), 'pipe040', 'pipe050', 'pipe060', 'pipe080', 'pipe100', 'pipe120', 'pipe150'. Set tisStandard to 't2' (for มอก.ชั้น 2), 't3' (for มอก.ชั้น 3), or 'no_tis'.\n" +
         "   - Catch basins: Model MUST be 'basin030', 'basin040', 'basin050', 'basin060', 'basin080', 'basin100', 'basin120'. Length of drainage defaults to 1.0.\n" +
+        customProdInstruction +
         "Extract attributes strictly: category, model, length (in meters as numeric), count (quantity), wireCount, connectionType, tisStandard, optional customPrice/rate if listed directly, and label in Thai.";
 
       const prompt = 

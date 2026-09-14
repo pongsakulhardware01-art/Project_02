@@ -625,8 +625,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     const updatedSettings: AppSettings = {
       ...settings,
       suppliers: updatedSuppliersList,
-      customProducts: activeObj.customProducts || nextCustom,
-      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+      customProducts: activeObj.customProducts || (activeObj.id === selectedSupplierId ? nextCustom : []),
+      deletedItemIds: activeObj.deletedItemIds || (activeObj.id === selectedSupplierId ? nextDeleted : []),
     };
 
     setSettings(updatedSettings);
@@ -664,8 +664,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     const updatedSettings: AppSettings = {
       ...settings,
       suppliers: updatedSuppliersList,
-      customProducts: activeObj.customProducts || nextCustom,
-      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+      customProducts: activeObj.customProducts || (activeObj.id === selectedSupplierId ? nextCustom : []),
+      deletedItemIds: activeObj.deletedItemIds || (activeObj.id === selectedSupplierId ? nextDeleted : []),
     };
 
     setSettings(updatedSettings);
@@ -699,8 +699,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     const updatedSettings: AppSettings = {
       ...settings,
       suppliers: updatedSuppliersList,
-      customProducts: activeObj.customProducts || customProducts,
-      deletedItemIds: activeObj.deletedItemIds || nextDeleted,
+      customProducts: activeObj.customProducts || (activeObj.id === selectedSupplierId ? customProducts : []),
+      deletedItemIds: activeObj.deletedItemIds || (activeObj.id === selectedSupplierId ? nextDeleted : []),
     };
 
     setSettings(updatedSettings);
@@ -712,6 +712,40 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     }).catch(() => {});
 
     showNotify("กู้คืนรายการสินค้ากลับเข้าสู่ระบบเรียบร้อย! 🔄✨");
+  };
+
+  // Restore all deleted products for current supplier
+  const handleRestoreAllProducts = () => {
+    setDeletedItemIds([]);
+
+    const updatedSuppliersList = currentSuppliers.map((s) => {
+      if (s.id === selectedSupplierId) {
+        return {
+          ...s,
+          deletedItemIds: [],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    const activeObj = updatedSuppliersList.find((s) => s.id === settings.activeSupplierId) || updatedSuppliersList[0];
+    const updatedSettings: AppSettings = {
+      ...settings,
+      suppliers: updatedSuppliersList,
+      customProducts: activeObj.customProducts || (activeObj.id === selectedSupplierId ? customProducts : []),
+      deletedItemIds: activeObj.deletedItemIds || (activeObj.id === selectedSupplierId ? [] : []),
+    };
+
+    setSettings(updatedSettings);
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
+
+    showNotify("กู้คืนรายการสินค้าทั้งหมดกลับเข้าสู่ระบบเรียบร้อย! 🔄✨");
   };
 
   // Bulk profit markup tool
@@ -996,8 +1030,8 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
       prices: activeObj.prices,
       costs: activeObj.costs,
       weights: activeObj.weights,
-      customProducts: activeObj.customProducts || customProducts,
-      deletedItemIds: activeObj.deletedItemIds || deletedItemIds,
+      customProducts: activeObj.customProducts || (activeObj.id === selectedSupplierId ? customProducts : []),
+      deletedItemIds: activeObj.deletedItemIds || (activeObj.id === selectedSupplierId ? deletedItemIds : []),
     };
 
     setSettings(updatedSettings);
@@ -2086,6 +2120,7 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
                 }}
                 onDeleteProduct={handleDeleteProduct}
                 onRestoreProduct={handleRestoreProduct}
+                onRestoreAllProducts={handleRestoreAllProducts}
               />
             </div>
           )}

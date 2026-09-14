@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
-import { AppSettings, WeightItem } from "../types";
+import { AppSettings, WeightItem, CustomProduct } from "../types";
 import { fmt, roundToBeautifulPrice, compressImage } from "../utils";
 import SupplierQuickSelector from "./SupplierQuickSelector";
 import DeliveryDistanceWidget from "./DeliveryDistanceWidget";
+import AddProductModal from "./AddProductModal";
 import {
   Camera,
   Upload,
@@ -25,12 +26,14 @@ import {
   Copy,
   Check,
   Truck,
-  MapPin
+  MapPin,
+  Star
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface UniversalBatchCalculatorProps {
   settings: AppSettings;
+  setSettings?: Dispatch<SetStateAction<AppSettings>>;
   weightItems: WeightItem[];
   setWeightItems: Dispatch<SetStateAction<WeightItem[]>>;
   onNavigateToWeight: () => void;
@@ -40,8 +43,8 @@ interface UniversalBatchCalculatorProps {
 
 export interface UniversalBatchItem {
   id: string;
-  category: "slab" | "pile" | "hollow_core" | "fence" | "drainage";
-  model: string; // normal, m.o.c, i15, i18, i22, i26, i30, s18, s22, s26, s30, s35, s40, hex, hc, fence3, fence4, pipe*, basin*
+  category: "slab" | "pile" | "hollow_core" | "fence" | "drainage" | "custom";
+  model: string; // normal, m.o.c, i15..i40, s18..s40, hex, hc, fence3, fence4, pipe*, basin*, or custom product id
   length: number | "";
   count: number | "";
   wireCount?: "4" | "5" | "6" | "7" | "8" | "5_mm_5" | "auto"; // only for slabs
@@ -56,6 +59,7 @@ export interface UniversalBatchItem {
 
 export default function UniversalBatchCalculator({
   settings,
+  setSettings,
   weightItems,
   setWeightItems,
   onNavigateToWeight,
@@ -65,15 +69,26 @@ export default function UniversalBatchCalculator({
   // Items in the table state
   const [items, setItems] = useState<UniversalBatchItem[]>([]);
 
-  const customSlabs = (settings.customProducts || []).filter(
-    (cp) => cp.category === "slabs" && !(settings.deletedItemIds || []).includes(cp.id)
+  // All active custom products (not deleted)
+  const allCustomProducts = (settings.customProducts || []).filter(
+    (cp) => !(settings.deletedItemIds || []).includes(cp.id)
   );
-  const customPiles = (settings.customProducts || []).filter(
-    (cp) => (cp.category === "i_piles" || cp.category === "s_piles" || cp.category === "hex_fence") && !(settings.deletedItemIds || []).includes(cp.id)
+
+  const customSlabs = allCustomProducts.filter(
+    (cp) => cp.category === "slabs"
   );
-  const customDrainage = (settings.customProducts || []).filter(
-    (cp) => (cp.category === "pipes" || cp.category === "basins") && !(settings.deletedItemIds || []).includes(cp.id)
+  const customPiles = allCustomProducts.filter(
+    (cp) => cp.category === "i_piles" || cp.category === "s_piles" || cp.category === "hex_fence"
   );
+  const customDrainage = allCustomProducts.filter(
+    (cp) => cp.category === "pipes" || cp.category === "basins"
+  );
+  const customOthers = allCustomProducts.filter(
+    (cp) => !customSlabs.some(s => s.id === cp.id) && !customPiles.some(p => p.id === cp.id) && !customDrainage.some(d => d.id === cp.id)
+  );
+
+  // Modal for quick adding new custom products straight from batch calculator
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState<boolean>(false);
 
   // Pricing & rounding state
   const [autoRoundPrice, setAutoRoundPrice] = useState<boolean>(() => {
@@ -108,16 +123,100 @@ export default function UniversalBatchCalculator({
     return () => window.removeEventListener("storage_round_price", syncVal);
   }, []);
 
-  const addNewLineItem = (category: "slab" | "pile" | "hollow_core" | "fence" | "drainage") => {
+  // Quick Add Custom Product directly from Batch Calculator
+  const handleAddCustomProduct = async (newProd: CustomProduct) => {
+    const nextCustom = [...(settings.customProducts || []), newProd];
+    const nextDeleted = (settings.deletedItemIds || []).filter((id) => id !== newProd.id);
+
+    const updatedSuppliers = (settings.suppliers || []).map((s) => {
+      if (s.id === settings.activeSupplierId) {
+        return {
+          ...s,
+          customProducts: nextCustom,
+          deletedItemIds: nextDeleted,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    const updatedSettings: AppSettings = {
+      ...settings,
+      customProducts: nextCustom,
+      deletedItemIds: nextDeleted,
+      suppliers: updatedSuppliers.length > 0 ? updatedSuppliers : settings.suppliers
+    };
+
+    if (setSettings) {
+      setSettings(updatedSettings);
+    }
+    localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedSettings),
+      });
+    } catch (e) {
+      // Offline fallback
+    }
+
+    // Determine category type for table
+    let catType: "slab" | "pile" | "hollow_core" | "fence" | "drainage" | "custom" = "custom";
+    if (newProd.category === "slabs") catType = "slab";
+    else if (newProd.category === "i_piles" || newProd.category === "s_piles" || newProd.category === "hex_fence") catType = "pile";
+    else if (newProd.category === "pipes" || newProd.category === "basins") catType = "drainage";
+
+    // Immediately insert into current batch calculation table!
+    addNewLineItem(catType, newProd.id);
+
+    setSuccessMessage(`เพิ่มสินค้า "${newProd.name}" (${newProd.price}฿/${newProd.unit}) ลงในระบบและตารางคำนวณเรียบร้อยแล้ว! 🎉`);
+    setIsAddProductModalOpen(false);
+  };
+
+  const addNewLineItem = (
+    category: "slab" | "pile" | "hollow_core" | "fence" | "drainage" | "custom",
+    customProdId?: string
+  ) => {
+    const matchedCp = customProdId 
+      ? allCustomProducts.find((p) => p.id === customProdId) 
+      : (category === "custom" ? allCustomProducts[0] : null);
+
+    let chosenModel = "";
+    let defaultLen: number | "" = 2.5;
+    let defaultCount: number | "" = 10;
+    let defaultLabel = "";
+
+    if (matchedCp) {
+      chosenModel = matchedCp.id;
+      defaultLabel = matchedCp.name;
+      const isPiece = matchedCp.unit.includes("ชิ้น") || 
+                      matchedCp.unit.includes("ท่อน") || 
+                      matchedCp.unit.includes("ชุด") || 
+                      matchedCp.unit.includes("ต้น") ||
+                      matchedCp.unit.includes("อัน") ||
+                      matchedCp.unit.includes("ตัว") ||
+                      matchedCp.unit.includes("ใบ");
+      defaultLen = isPiece ? 1.0 : 2.0;
+    } else if (category === "custom") {
+      chosenModel = allCustomProducts[0]?.id || "";
+      defaultLabel = allCustomProducts[0]?.name || "สินค้ากำหนดเอง";
+      defaultLen = 1.0;
+    } else {
+      chosenModel = category === "slab" ? "normal" : category === "hollow_core" ? "hc" : category === "pile" ? "i18" : category === "drainage" ? "pipe030" : "fence3";
+      defaultLen = category === "slab" ? 2.5 : category === "hollow_core" ? 4.0 : category === "pile" ? 6.0 : category === "drainage" ? 1.0 : 3.0;
+    }
+
     const newItem: UniversalBatchItem = {
       id: Math.random().toString(36).substring(2, 9),
       category,
-      model: category === "slab" ? "normal" : category === "hollow_core" ? "hc" : category === "pile" ? "i18" : category === "drainage" ? "pipe030" : "fence3",
-      length: category === "slab" ? 2.5 : category === "hollow_core" ? 4.0 : category === "pile" ? 6.0 : category === "drainage" ? 1.0 : 3.0,
-      count: 10,
+      model: chosenModel,
+      length: defaultLen,
+      count: defaultCount,
       customPrice: "",
       customStandardRate: "",
-      label: ""
+      label: defaultLabel
     };
 
     if (category === "slab") {
@@ -142,39 +241,71 @@ export default function UniversalBatchCalculator({
           const updated = { ...item, [key]: value };
           
           if (key === "category") {
-            const cat = value as "slab" | "pile" | "hollow_core" | "fence" | "drainage";
-            updated.model = cat === "slab" ? "normal" : cat === "hollow_core" ? "hc" : cat === "pile" ? "i18" : cat === "drainage" ? "pipe030" : "fence3";
-            updated.length = cat === "slab" ? 2.5 : cat === "hollow_core" ? 4.0 : cat === "pile" ? 6.0 : cat === "drainage" ? 1.0 : 3.0;
-            updated.count = 10;
-            updated.customPrice = "";
-            updated.customStandardRate = "";
-            updated.customWeightPerMeter = "";
+            const cat = value as "slab" | "pile" | "hollow_core" | "fence" | "drainage" | "custom";
             
-            if (cat === "slab") {
-              updated.wireCount = "auto";
-              updated.tisStandard = "no_tis";
-              delete updated.hcWidth;
-              delete updated.connectionType;
-            } else if (cat === "pile") {
-              updated.tisStandard = "no_tis";
-              updated.connectionType = "single";
-              delete updated.hcWidth;
-              delete updated.wireCount;
-            } else if (cat === "hollow_core") {
-              updated.hcWidth = 0.35;
-              delete updated.wireCount;
-              delete updated.connectionType;
-              delete updated.tisStandard;
-            } else if (cat === "fence") {
+            if (cat === "custom") {
+              const defaultCp = allCustomProducts[0];
+              updated.model = defaultCp?.id || "";
+              const isPiece = defaultCp && (
+                defaultCp.unit.includes("ชิ้น") || 
+                defaultCp.unit.includes("ท่อน") || 
+                defaultCp.unit.includes("ชุด") || 
+                defaultCp.unit.includes("ต้น")
+              );
+              updated.length = isPiece ? 1.0 : 2.0;
+              updated.count = 10;
+              updated.customPrice = "";
+              updated.customStandardRate = "";
+              updated.customWeightPerMeter = "";
               delete updated.wireCount;
               delete updated.connectionType;
               delete updated.tisStandard;
               delete updated.hcWidth;
-            } else if (cat === "drainage") {
-              updated.tisStandard = "no_tis";
-              delete updated.wireCount;
-              delete updated.connectionType;
-              delete updated.hcWidth;
+            } else {
+              updated.model = cat === "slab" ? "normal" : cat === "hollow_core" ? "hc" : cat === "pile" ? "i18" : cat === "drainage" ? "pipe030" : "fence3";
+              updated.length = cat === "slab" ? 2.5 : cat === "hollow_core" ? 4.0 : cat === "pile" ? 6.0 : cat === "drainage" ? 1.0 : 3.0;
+              updated.count = 10;
+              updated.customPrice = "";
+              updated.customStandardRate = "";
+              updated.customWeightPerMeter = "";
+              
+              if (cat === "slab") {
+                updated.wireCount = "auto";
+                updated.tisStandard = "no_tis";
+                delete updated.hcWidth;
+                delete updated.connectionType;
+              } else if (cat === "pile") {
+                updated.tisStandard = "no_tis";
+                updated.connectionType = "single";
+                delete updated.hcWidth;
+                delete updated.wireCount;
+              } else if (cat === "hollow_core") {
+                updated.hcWidth = 0.35;
+                delete updated.wireCount;
+                delete updated.connectionType;
+                delete updated.tisStandard;
+              } else if (cat === "fence") {
+                delete updated.wireCount;
+                delete updated.connectionType;
+                delete updated.tisStandard;
+                delete updated.hcWidth;
+              } else if (cat === "drainage") {
+                updated.tisStandard = "no_tis";
+                delete updated.wireCount;
+                delete updated.connectionType;
+                delete updated.hcWidth;
+              }
+            }
+          } else if (key === "model") {
+            const cp = allCustomProducts.find((p) => p.id === value);
+            if (cp) {
+              updated.customPrice = "";
+              updated.customStandardRate = "";
+              updated.customWeightPerMeter = "";
+              const isPiece = cp.unit.includes("ชิ้น") || cp.unit.includes("ท่อน") || cp.unit.includes("ชุด") || cp.unit.includes("ต้น");
+              if (isPiece && (updated.length === "" || updated.length === 0)) {
+                updated.length = 1.0;
+              }
             }
           }
           return updated;
@@ -325,7 +456,12 @@ export default function UniversalBatchCalculator({
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      let category: "slab" | "pile" | "hollow_core" | "fence" | "drainage" = "slab";
+      // Check if line matches any custom product name or subLabel
+      const matchedCustom = allCustomProducts.find(
+        (cp) => cp.name && trimmed.toLowerCase().includes(cp.name.toLowerCase())
+      );
+
+      let category: "slab" | "pile" | "hollow_core" | "fence" | "drainage" | "custom" = "slab";
       let model = "normal";
       let length: number | "" = 2.0;
       let count: number | "" = 10;
@@ -335,10 +471,22 @@ export default function UniversalBatchCalculator({
       let hcWidth: 0.35 | 0.60 | 1.20 = 0.35;
       let label = trimmed;
 
-      const isMoc = /มอก|ม\.อ\.ก|tis|t.i.s/i.test(trimmed);
-      tisStandard = isMoc ? "tis" : "no_tis";
+      if (matchedCustom) {
+        category = "custom";
+        model = matchedCustom.id;
+        const isPiece = matchedCustom.unit.includes("ชิ้น") || 
+                        matchedCustom.unit.includes("ท่อน") || 
+                        matchedCustom.unit.includes("ชุด") || 
+                        matchedCustom.unit.includes("ต้น") ||
+                        matchedCustom.unit.includes("อัน") ||
+                        matchedCustom.unit.includes("ตัว") ||
+                        matchedCustom.unit.includes("ใบ");
+        length = isPiece ? 1.0 : 2.0;
+      } else {
+        const isMoc = /มอก|ม\.อ\.ก|tis|t.i.s/i.test(trimmed);
+        tisStandard = isMoc ? "tis" : "no_tis";
 
-      // 1. Detect Category & Model
+        // 1. Detect Category & Model
       if (/แผ่นกลวง|hollow\s*core|รูกลวง|แผ่นรูกลวง/i.test(trimmed)) {
         category = "hollow_core";
         model = "hc";
@@ -406,6 +554,7 @@ export default function UniversalBatchCalculator({
           const matchedW = slabWireMatch[1] || slabWireMatch[2] || slabWireMatch[3];
           if (matchedW) wireCount = matchedW as any;
         }
+      }
       }
 
       // 2. Extract Length
@@ -476,7 +625,10 @@ export default function UniversalBatchCalculator({
       const res = await fetch("/api/parse-universal-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: rawTextLines })
+        body: JSON.stringify({ 
+          text: rawTextLines,
+          customProducts: allCustomProducts
+        })
       });
 
       if (!res.ok) {
@@ -541,7 +693,8 @@ export default function UniversalBatchCalculator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           image: base64Data,
-          mimeType: imageMimeType || "image/jpeg"
+          mimeType: imageMimeType || "image/jpeg",
+          customProducts: allCustomProducts
         })
       });
 
@@ -867,14 +1020,15 @@ export default function UniversalBatchCalculator({
       case "pile": return "เสาเข็มคอนกรีต / เสารั้ว";
       case "hollow_core": return "แผ่นรูกลวง (Hollow Core)";
       case "drainage": return "ท่อระบายน้ำ / บ่อพัก";
+      case "custom": return "⭐ สินค้ากำหนดเอง";
       default: return "สินค้าพงษ์สกุล";
     }
   };
 
   const getModelLabelTh = (category: string, model: string) => {
-    if (model.startsWith("custom_")) {
-      const cp = settings.customProducts?.find((p) => p.id === model);
-      if (cp) return `⭐ ${cp.name} ${cp.subLabel ? `(${cp.subLabel})` : ""}`;
+    const cp = allCustomProducts.find((p) => p.id === model) || settings.customProducts?.find((p) => p.id === model);
+    if (cp) {
+      return `⭐ ${cp.name} ${cp.subLabel ? `(${cp.subLabel})` : ""}`;
     }
     if (category === "slab") {
       return model === "m.o.c" ? "รุ่นมาตรฐาน มอก." : "รุ่นสามัญธรรมดา";
@@ -1158,27 +1312,42 @@ export default function UniversalBatchCalculator({
               <div className="flex flex-wrap gap-1.5 justify-end">
                 <button
                   onClick={() => addNewLineItem("slab")}
-                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition"
+                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
                 >
                   <Plus size={12} /> แผ่นพื้น
                 </button>
                 <button
                   onClick={() => addNewLineItem("pile")}
-                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition"
+                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
                 >
                   <Plus size={12} /> เสาเข็ม
                 </button>
                 <button
                   onClick={() => addNewLineItem("hollow_core")}
-                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition"
+                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
                 >
                   <Plus size={12} /> แผ่นรูกลวง
                 </button>
                 <button
                   onClick={() => addNewLineItem("drainage")}
-                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition"
+                  className="py-1.5 px-3 rounded-lg border border-neutral-200 hover:bg-neutral-50 text-[11px] font-bold text-neutral-700 flex items-center gap-1 transition cursor-pointer"
                 >
                   <Plus size={12} /> ท่อระบายน้ำ/บ่อพัก
+                </button>
+                {allCustomProducts.length > 0 && (
+                  <button
+                    onClick={() => addNewLineItem("custom")}
+                    className="py-1.5 px-3 rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-[11px] font-bold text-amber-800 flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Star size={12} className="text-amber-600 fill-amber-500" /> สินค้ากำหนดเอง ({allCustomProducts.length})
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsAddProductModalOpen(true)}
+                  className="py-1.5 px-3 rounded-lg border border-emerald-300 bg-emerald-50/80 hover:bg-emerald-100 text-[11px] font-bold text-emerald-800 flex items-center gap-1 transition cursor-pointer shadow-xs"
+                  title="สร้างสินค้าใหม่ทันทีและนำเข้าตารางคำนวณ"
+                >
+                  <Plus size={12} className="text-emerald-700" /> สร้างสินค้าใหม่ ⚡
                 </button>
               </div>
             </div>
@@ -1224,11 +1393,30 @@ export default function UniversalBatchCalculator({
                             <option value="pile">เสาเข็ม / รั้ว</option>
                             <option value="hollow_core">แผ่นรูกลวง HC</option>
                             <option value="drainage">ท่อระบายน้ำ / บ่อพัก</option>
+                            <option value="custom">⭐ สินค้ากำหนดเอง</option>
                           </select>
                         </td>
 
                         {/* Model select dynamically depending on category */}
                         <td className="py-3 px-3">
+                          {row.category === "custom" && (
+                            <select
+                              value={row.model}
+                              onChange={(e) => editLineItem(row.id, "model", e.target.value)}
+                              className="p-2 bg-amber-50/60 hover:bg-white focus:bg-white border border-amber-250 hover:border-amber-400 rounded-xl font-bold text-xs w-full transition focus:ring-1 focus:ring-amber-500 focus:outline-none text-amber-950"
+                            >
+                              {allCustomProducts.length === 0 ? (
+                                <option value="">(ยังไม่มีสินค้ากำหนดเอง)</option>
+                              ) : (
+                                allCustomProducts.map((cp) => (
+                                  <option key={cp.id} value={cp.id}>
+                                    ⭐ {cp.name} {cp.subLabel ? `(${cp.subLabel})` : ""} - {cp.price} {cp.unit}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          )}
+
                           {row.category === "slab" && (
                             <select
                               value={row.model}
@@ -1396,6 +1584,12 @@ export default function UniversalBatchCalculator({
                                 <option value="joint">มีท่อนต่อ</option>
                               </select>
                             </div>
+                          )}
+
+                          {row.category === "custom" && (
+                            <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-1.5 rounded-xl border border-amber-200 block text-center truncate">
+                              ⭐ กำหนดเอง ({row.standardRateUnit})
+                            </span>
                           )}
 
                           {row.category === "hollow_core" && (

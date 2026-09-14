@@ -120,6 +120,27 @@ export default function SlabCalculator({
   const customSlabs = (settings.customProducts || []).filter(
     (cp) => cp.category === "slabs" && !(settings.deletedItemIds || []).includes(cp.id)
   );
+
+  // Auto recover boardType if it fell back to custom or is invalid
+  useEffect(() => {
+    const isNormalAvailable = !(settings.deletedItemIds || []).includes("normalBoardPrice");
+    const isMocAvailable = !(settings.deletedItemIds || []).includes("mocBoardPrice");
+
+    if (boardType === "custom" || boardType === "m.o.c_custom") {
+      // If user had no customPrice entered and normal is available, recover to normal
+      if ((customPrice === 0 || customPrice === "") && isNormalAvailable) {
+        setBoardType("normal");
+      }
+    } else if (boardType === "normal" && !isNormalAvailable) {
+      if (isMocAvailable) setBoardType("m.o.c");
+      else if (customSlabs.length > 0) setBoardType(customSlabs[0].id);
+      else setBoardType("custom");
+    } else if (boardType === "m.o.c" && !isMocAvailable) {
+      if (isNormalAvailable) setBoardType("normal");
+      else if (customSlabs.length > 0) setBoardType(customSlabs[0].id);
+      else setBoardType("m.o.c_custom");
+    }
+  }, [settings.deletedItemIds, customSlabs, boardType, customPrice]);
   const selectedCustomSlab = customSlabs.find((cp) => cp.id === boardType);
 
   let step = 0;

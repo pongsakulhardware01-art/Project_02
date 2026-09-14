@@ -156,6 +156,10 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        let cleanedDeleted = Array.isArray(parsed.deletedItemIds) ? parsed.deletedItemIds : (defaultSettings.deletedItemIds || []);
+        if (cleanedDeleted.includes("normalBoardPrice")) {
+          cleanedDeleted = cleanedDeleted.filter((id: string) => id.startsWith("custom_"));
+        }
         return {
           activeSupplierId: parsed.activeSupplierId || defaultSettings.activeSupplierId,
           suppliers: (parsed.suppliers && parsed.suppliers.length > 0) ? parsed.suppliers : defaultSuppliers,
@@ -163,7 +167,7 @@ export default function App() {
           costs: { ...defaultSettings.costs, ...parsed.costs },
           weights: { ...defaultSettings.weights, ...parsed.weights },
           customProducts: Array.isArray(parsed.customProducts) ? parsed.customProducts : (defaultSettings.customProducts || []),
-          deletedItemIds: Array.isArray(parsed.deletedItemIds) ? parsed.deletedItemIds : (defaultSettings.deletedItemIds || []),
+          deletedItemIds: cleanedDeleted,
         };
       } catch (e) {
         console.error("Failed to parse saved settings", e);
@@ -259,11 +263,19 @@ export default function App() {
     const target = suppliersList.find((s) => s.id === supplierId);
     if (!target) return;
 
+    let targetDeleted = Array.isArray(target.deletedItemIds) ? target.deletedItemIds : [];
+    if (targetDeleted.includes("normalBoardPrice")) {
+      targetDeleted = targetDeleted.filter((id) => id.startsWith("custom_"));
+    }
+
     const updatedSettings: AppSettings = {
       ...settings,
       activeSupplierId: supplierId,
       prices: target.prices,
+      costs: target.costs || settings.costs,
       weights: target.weights,
+      customProducts: target.customProducts || [],
+      deletedItemIds: targetDeleted,
       suppliers: suppliersList,
     };
 
@@ -891,6 +903,7 @@ export default function App() {
                 <div className="bg-white rounded-3xl p-1 md:p-2 border border-neutral-200/60 shadow-sm">
                   <UniversalBatchCalculator 
                     settings={settings} 
+                    setSettings={setSettings}
                     weightItems={weightItems}
                     setWeightItems={setWeightItems} 
                     onNavigateToWeight={() => handleScreenChange("weight")}

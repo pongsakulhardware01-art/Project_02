@@ -33,6 +33,7 @@ interface SupplierPricingSectionProps {
   onOpenAddModal?: (defaultCategory?: CustomProduct["category"]) => void;
   onDeleteProduct?: (id: string, name: string) => void;
   onRestoreProduct?: (id: string) => void;
+  onRestoreAllProducts?: () => void;
 }
 
 export function SupplierPricingSection({
@@ -47,6 +48,7 @@ export function SupplierPricingSection({
   onOpenAddModal,
   onDeleteProduct,
   onRestoreProduct,
+  onRestoreAllProducts,
 }: SupplierPricingSectionProps) {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -181,14 +183,26 @@ export function SupplierPricingSection({
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowDeletedList(!showDeletedList)}
-              className="text-xs font-bold text-[#C62828] hover:underline flex items-center gap-1"
-            >
-              <span>{showDeletedList ? "ซ่อนรายการที่ถูกลบ" : "ดูและกู้คืนรายการ"}</span>
-              {showDeletedList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
+            <div className="flex items-center gap-2">
+              {onRestoreAllProducts && (
+                <button
+                  type="button"
+                  onClick={onRestoreAllProducts}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition shadow-xs"
+                >
+                  <RotateCcw size={12} />
+                  <span>กู้คืนทั้งหมด ({deletedItems.length})</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowDeletedList(!showDeletedList)}
+                className="text-xs font-bold text-[#C62828] hover:underline flex items-center gap-1"
+              >
+                <span>{showDeletedList ? "ซ่อนรายการที่ถูกลบ" : "ดูและกู้คืนรายการ"}</span>
+                {showDeletedList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
           </div>
 
           {showDeletedList && (
