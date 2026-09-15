@@ -92,7 +92,7 @@ export default function SlabCalculator({
 
   // --- SINGLE SLAB STATE ---
   const [boardType, setBoardType] = useState<string>("normal");
-  const [customPrice, setCustomPrice] = useState<number | "">(0);
+  const [customPrice, setCustomPrice] = useState<number | "">(settings.prices.normalBoardPrice || 210);
   const [length, setLength] = useState<number | "">(2.0);
   const [autoWireAdjust, setAutoWireAdjust] = useState<boolean>(true);
   const [wireCount, setWireCount] = useState<string>("4");
@@ -114,24 +114,26 @@ export default function SlabCalculator({
 
   // Calculations for Single Slab
   const calcLength = length === "" ? 0 : length;
-  const calcCustomPrice = customPrice === "" ? 0 : customPrice;
+  const calcCustomPrice = (customPrice !== "" && typeof customPrice === "number" && customPrice > 0)
+    ? customPrice
+    : (boardType === "m.o.c_custom" ? settings.prices.mocBoardPrice : settings.prices.normalBoardPrice);
   const calcTotalArea = totalArea === "" ? 0 : totalArea;
 
   const customSlabs = (settings.customProducts || []).filter(
     (cp) => cp.category === "slabs" && !(settings.deletedItemIds || []).includes(cp.id)
   );
 
-  // Auto recover boardType if it fell back to custom or is invalid
+  // Auto recover boardType ONLY if the currently selected catalog product was deleted
   useEffect(() => {
     const isNormalAvailable = !(settings.deletedItemIds || []).includes("normalBoardPrice");
     const isMocAvailable = !(settings.deletedItemIds || []).includes("mocBoardPrice");
 
+    // Do NOT reset if user explicitly selected custom or m.o.c_custom!
     if (boardType === "custom" || boardType === "m.o.c_custom") {
-      // If user had no customPrice entered and normal is available, recover to normal
-      if ((customPrice === 0 || customPrice === "") && isNormalAvailable) {
-        setBoardType("normal");
-      }
-    } else if (boardType === "normal" && !isNormalAvailable) {
+      return;
+    }
+
+    if (boardType === "normal" && !isNormalAvailable) {
       if (isMocAvailable) setBoardType("m.o.c");
       else if (customSlabs.length > 0) setBoardType(customSlabs[0].id);
       else setBoardType("custom");
@@ -139,8 +141,17 @@ export default function SlabCalculator({
       if (isNormalAvailable) setBoardType("normal");
       else if (customSlabs.length > 0) setBoardType(customSlabs[0].id);
       else setBoardType("m.o.c_custom");
+    } else if (
+      boardType !== "normal" &&
+      boardType !== "m.o.c" &&
+      !customSlabs.some((cs) => cs.id === boardType)
+    ) {
+      // The selected custom product is no longer available
+      if (isNormalAvailable) setBoardType("normal");
+      else if (isMocAvailable) setBoardType("m.o.c");
+      else setBoardType("custom");
     }
-  }, [settings.deletedItemIds, customSlabs, boardType, customPrice]);
+  }, [settings.deletedItemIds, customSlabs, boardType]);
   const selectedCustomSlab = customSlabs.find((cp) => cp.id === boardType);
 
   let step = 0;
@@ -169,7 +180,7 @@ export default function SlabCalculator({
     else if (wireCount === "6") step = basePrice + 20;
     else if (wireCount === "7") step = basePrice + 35;
     else if (wireCount === "8") step = basePrice + 55;
-    else if (wireCount === "5_mm_5") step = settings.prices.normalBoardPrice + 55;
+    else if (wireCount === "5_mm_5") step = basePrice + 55;
   } else if (boardType === "m.o.c" || boardType === "m.o.c_custom") {
     const basePrice = boardType === "m.o.c_custom" ? calcCustomPrice : settings.prices.mocBoardPrice;
     if (wireCount === "4") step = basePrice;
@@ -177,7 +188,7 @@ export default function SlabCalculator({
     else if (wireCount === "6") step = basePrice + 30;
     else if (wireCount === "7") step = basePrice + 50;
     else if (wireCount === "8") step = basePrice + 75;
-    else if (wireCount === "5_mm_5") step = settings.prices.mocBoardPrice + 75;
+    else if (wireCount === "5_mm_5") step = basePrice + 75;
   }
 
   const rawFinalPrice = 0.35 * step * calcLength;
@@ -760,7 +771,18 @@ const parseSlabsTextClientSide = (
 
   const editRow = (id: string, field: keyof ScannedSlabItem, value: any) => {
     setScannedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value };
+        if (field === "boardType") {
+          if (value === "custom" && (!updated.customPriceSqm || updated.customPriceSqm === "")) {
+            updated.customPriceSqm = settings.prices.normalBoardPrice;
+          } else if (value === "m.o.c_custom" && (!updated.customPriceSqm || updated.customPriceSqm === "")) {
+            updated.customPriceSqm = settings.prices.mocBoardPrice;
+          }
+        }
+        return updated;
+      })
     );
   };
 
@@ -923,7 +945,19 @@ const parseSlabsTextClientSide = (
                       <label className="text-sm font-semibold text-neutral-700">ชนิดแผ่นพื้น</label>
                       <select
                         value={boardType}
-                        onChange={(e) => setBoardType(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setBoardType(val);
+                          if (val === "custom") {
+                            if (!customPrice || customPrice === 0) {
+                              setCustomPrice(settings.prices.normalBoardPrice || 210);
+                            }
+                          } else if (val === "m.o.c_custom") {
+                            if (!customPrice || customPrice === 0) {
+                              setCustomPrice(settings.prices.mocBoardPrice || 240);
+                            }
+                          }
+                        }}
                         className="w-full p-3 bg-neutral-50 hover:bg-neutral-100 transition border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200"
                       >
                         {!settings.deletedItemIds?.includes("normalBoardPrice") && (
@@ -937,25 +971,40 @@ const parseSlabsTextClientSide = (
                             ⭐ [กำหนดเอง] {cs.name} {cs.subLabel ? `(${cs.subLabel})` : ""} - ฿{fmt(cs.price)}/ตร.ม.
                           </option>
                         ))}
-                        <option value="custom">แผ่นพื้นธรรมดา (กำหนดราคาเองชั่วคราว)</option>
-                        <option value="m.o.c_custom">แผ่นพื้น มอก. (กำหนดราคาเองชั่วคราว)</option>
+                        <option value="custom">✏️ แผ่นพื้นธรรมดา (กำหนดราคาเองชั่วคราว)</option>
+                        <option value="m.o.c_custom">✏️ แผ่นพื้น มอก. (กำหนดราคาเองชั่วคราว)</option>
                       </select>
                     </div>
 
                     {/* Custom price inputs if boardType has custom prefix */}
                     {(boardType === "custom" || boardType === "m.o.c_custom") && (
-                      <div className="flex flex-col gap-1.5 bg-red-50/50 p-4 rounded-xl border border-red-100">
-                        <label className="text-sm font-semibold text-[#8B0000]">ราคานำเข้า (บาท/ตร.ม. ไม่รวมลวด ตั้งต้น)</label>
-                        <input
-                          type="number"
-                          value={customPrice}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setCustomPrice(val === "" ? "" : parseFloat(val));
-                          }}
-                          className="w-full p-3 bg-white border border-red-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828]"
-                          placeholder="ใส่ราคาตั้งต้นเอง"
-                        />
+                      <div className="flex flex-col gap-2 bg-red-50/70 p-4 rounded-xl border border-red-200/80">
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-bold text-[#8B0000]">
+                            {boardType === "m.o.c_custom"
+                              ? "ราคานำเข้าแผ่นพื้น มอก. (บาท/ตร.ม. ลวด 4 เส้น ตั้งต้น)"
+                              : "ราคานำเข้าแผ่นพื้นธรรมดา (บาท/ตร.ม. ลวด 4 เส้น ตั้งต้น)"}
+                          </label>
+                          <span className="text-xs text-neutral-500 font-mono">
+                            ราคากลาง: ฿{fmt(boardType === "m.o.c_custom" ? settings.prices.mocBoardPrice : settings.prices.normalBoardPrice)}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 font-bold text-sm">฿</span>
+                          <input
+                            type="number"
+                            value={customPrice}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomPrice(val === "" ? "" : parseFloat(val));
+                            }}
+                            className="w-full pl-8 pr-4 py-3 bg-white border border-red-200 rounded-xl font-bold text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828] text-base"
+                            placeholder={String(boardType === "m.o.c_custom" ? settings.prices.mocBoardPrice : settings.prices.normalBoardPrice)}
+                          />
+                        </div>
+                        <p className="text-[11px] text-neutral-600">
+                          * ระบบจะนำราคาต่อ ตร.ม. นี้ไปคำนวณสเต็ปบวกลวดและความยาวแผ่นตามสูตรวิศวกรรมทันที
+                        </p>
                       </div>
                     )}
 
@@ -1057,7 +1106,9 @@ const parseSlabsTextClientSide = (
                 <div className="bg-gradient-to-br from-[#E53935] to-[#B71C1C] text-white rounded-2xl p-6 shadow-md flex flex-col justify-between h-full min-h-[350px]">
                   <div>
                     <span className="text-xs font-semibold bg-white/20 text-white py-1 px-3 rounded-full uppercase tracking-wider">
-                      ผลการคำนวณแผ่นพื้น
+                      {boardType === "custom" || boardType === "m.o.c_custom"
+                        ? "ผลการคำนวณแผ่นพื้น (กำหนดราคาเอง)"
+                        : "ผลการคำนวณแผ่นพื้น"}
                     </span>
                     <div className="mt-6">
                       <span className="text-lg opacity-85 block">ราคาต่อแผ่น</span>
@@ -1093,7 +1144,14 @@ const parseSlabsTextClientSide = (
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span>อัตราประมาณการ (Step):</span>
-                      <strong className="text-white font-semibold">฿{fmt(step)} / ตร.ม.</strong>
+                      <div className="text-right">
+                        <strong className="text-white font-semibold">฿{fmt(step)} / ตร.ม.</strong>
+                        {(boardType === "custom" || boardType === "m.o.c_custom") && (
+                          <span className="text-[11px] text-amber-200 block font-normal">
+                            (ราคาตั้งต้น ฿{fmt(calcCustomPrice)}/ตร.ม.)
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span>ความสามารถการรับน้ำหนักสูงสุด:</span>

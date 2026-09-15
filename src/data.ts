@@ -1,6 +1,6 @@
 import { AppSettings, Prices, Weights, SupplierProfile, DistanceTier, SupplierTruck } from "./types";
 
-export const APP_VERSION = "V.5.2";
+export const APP_VERSION = "V.5.3";
 
 export const defaultSupplierTrucks: SupplierTruck[] = [
   { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7500, label: "7.5 ตัน", enabled: true },
