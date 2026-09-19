@@ -1,0 +1,820 @@
+import { SupplierProfile, DistanceTier, SupplierTruck, MinOrderCriteriaType } from "../types";
+
+export interface GeoLocation {
+  lat: number;
+  lng: number;
+  address?: string;
+  name?: string;
+}
+
+export interface TripDetail {
+  tripNumber: number;
+  weightKg: number;
+  maxCapacityKg: number;
+  loadPercent: number;
+  isFullLoad: boolean;
+  truckId?: string;
+  truckName?: string;
+}
+
+export interface FleetPlanTrip {
+  tripNumber: number;
+  truckId: string;
+  truckName: string;
+  capacityKg: number;
+  allocatedWeightKg: number;
+  loadPercent: number;
+  remainingKg: number;
+  isFullLoad: boolean;
+}
+
+export interface FleetRecommendationPlan {
+  id: string;
+  type: "best_mixed" | "single_type" | "single_trip_upgrade" | "custom";
+  title: string;
+  badge: string;
+  badgeColor: "emerald" | "amber" | "blue" | "purple" | "neutral";
+  isRecommended?: boolean;
+  isCurrent?: boolean;
+  totalTrips: number;
+  totalCapacityKg: number;
+  avgUtilizationPct: number;
+  emptyCapacityKg: number;
+  trips: FleetPlanTrip[];
+  summary: string;
+  savingsHighlights?: string;
+}
+
+export interface TruckTripOption {
+  truckId: string;
+  truckName: string;
+  capacityKg: number;
+  tripsNeeded: number;
+  isCurrent: boolean;
+  canFitSingleTrip: boolean;
+  isLargerSingleTripAlt: boolean;
+}
+
+export interface FullLoadEvaluation {
+  isFullLoad: boolean; // เข้าเกณฑ์เต็มเที่ยว (≥ 96% หรือตามที่กำหนด)
+  currentWeightKg: number;
+  truckName: string;
+  truckCapacityKg: number;
+  capacityKg: number;
+  thresholdPercent: number; // เช่น 96%
+  requiredMinWeightKg: number; // น้ำหนักขั้นต่ำที่ต้องถึง เช่น 96% * capacityKg
+  targetWeightKg: number;
+  percentLoaded: number; // % บรรทุกจริงของคันแรก หรือเทียบกับพิกัด 1 คัน
+  loadPercent: number;
+  missingWeightKg: number; // ขาดอีกกี่ กก. ถึงจะเต็มเที่ยว (กรณีไม่เกิน 100%)
+  tripsNeeded: number; // จำนวนเที่ยว/คันที่ต้องใช้สำหรับรถประเภทนี้
+  tripDetails: TripDetail[]; // รายละเอียดน้ำหนักในแต่ละเที่ยว
+  truckTripOptions: TruckTripOption[]; // เปรียบเทียบจำนวนคัน/เที่ยวกับรถทุกประเภทในกองรถ
+  singleTripAlternative?: TruckTripOption; // รถขนาดใหญ่กว่าที่สามารถจบงานได้ใน 1 เที่ยว
+  fleetRecommendationPlans?: FleetRecommendationPlan[]; // รายการแผนจัดชุดรถแนะนำเปรียบเทียบความคุ้มค่า
+  bestValuePlan?: FleetRecommendationPlan; // แผนผสมที่ระวางแน่นและคุ้มค่าที่สุด
+  statusMessage: string;
+  detailMessage: string;
+}
+
+export interface DeliveryCalculationResult {
+  supplierId: string;
+  supplierName: string;
+  origin: GeoLocation;
+  destination: GeoLocation;
+  distanceKm: number;
+  isFreeDelivery: boolean;
+  freeRadiusKm: number;
+  excessDistanceKm: number;
+  ratePerKm: number;
+  basePrice: number;
+  deliveryFee: number;
+  matchedTier?: DistanceTier;
+  distanceTiers?: DistanceTier[];
+  directionsUrl: string;
+  reason: string;
+  availableTrucks?: SupplierTruck[];
+  minOrderCriteria?: MinOrderCriteriaType;
+  fullLoadThresholdPercent?: number;
+  fullLoadStatus?: FullLoadEvaluation;
+}
+
+// Extensive Preset Popular Construction, Industrial Estates & Hub Locations in Thailand for Instant Resolution
+export const PRESET_LOCATIONS: { name: string; address: string; lat: number; lng: number; province: string; keywords: string[] }[] = [
+  { 
+    name: "พงษ์สกุลฮาร์ดแวร์ (มหาชัย/สมุทรสาคร)", 
+    address: "ต.ท่าทราย อ.เมือง จ.สมุทรสาคร", 
+    lat: 13.5475, 
+    lng: 100.2745, 
+    province: "สมุทรสาคร",
+    keywords: ["พงษ์สกุล", "มหาชัย", "ท่าทราย", "สมุทรสาคร", "เมืองสมุทรสาคร"]
+  },
+  { 
+    name: "โซนพระราม 2 / แสมดำ", 
+    address: "ถ.พระราม 2 แสมดำ บางขุนเทียน กทม.", 
+    lat: 13.6265, 
+    lng: 100.3956, 
+    province: "กรุงเทพฯ",
+    keywords: ["พระราม 2", "พระราม2", "แสมดำ", "บางขุนเทียน", "สะแกงาม", "พันท้ายนรสิงห์"]
+  },
+  { 
+    name: "โซนบางขุนเทียน / ท่าข้าม / ประชาอุทิศ", 
+    address: "ท่าข้าม บางขุนเทียน กทม.", 
+    lat: 13.6385, 
+    lng: 100.4421, 
+    province: "กรุงเทพฯ",
+    keywords: ["ท่าข้าม", "หัวกระบือ", "ประชาอุทิศ", "ทุ่งครุ", "ราษฎร์บูรณะ"]
+  },
+  { 
+    name: "โซนบางบอน / เอกชัย", 
+    address: "ถ.เอกชัย แขวงบางบอน เขตบางบอน กทม.", 
+    lat: 13.6621, 
+    lng: 100.3842, 
+    province: "กรุงเทพฯ",
+    keywords: ["บางบอน", "เอกชัย", "บางแค", "เพชรเกษม", "หนองแขม"]
+  },
+  { 
+    name: "โซนกระทุ่มแบน / อ้อมน้อย", 
+    address: "อ.กระทุ่มแบน จ.สมุทรสาคร", 
+    lat: 13.6558, 
+    lng: 100.2978, 
+    province: "สมุทรสาคร",
+    keywords: ["กระทุ่มแบน", "อ้อมน้อย", "สวนหลวง", "แคราย", "บ้านแพ้ว"]
+  },
+  { 
+    name: "โซนพุทธมณฑล สาย 4 - 5 / สามพราน", 
+    address: "ถ.พุทธมณฑลสาย 4 อ.สามพราน จ.นครปฐม", 
+    lat: 13.7386, 
+    lng: 100.3214, 
+    province: "นครปฐม",
+    keywords: ["พุทธมณฑล", "สาย 4", "สาย 5", "สาย 3", "สาย 2", "สามพราน", "ศาลายา", "อ้อมใหญ่"]
+  },
+  { 
+    name: "โซนเมืองนครปฐม / นครชัยศรี", 
+    address: "อ.เมืองนครปฐม จ.นครปฐม", 
+    lat: 13.8196, 
+    lng: 100.0601, 
+    province: "นครปฐม",
+    keywords: ["นครปฐม", "นครชัยศรี", "ดอนตูม", "กำแพงแสน"]
+  },
+  { 
+    name: "โซนบางใหญ่ / บางบัวทอง / นนทบุรี", 
+    address: "อ.บางบัวทอง จ.นนทบุรี", 
+    lat: 13.9142, 
+    lng: 100.4185, 
+    province: "นนทบุรี",
+    keywords: ["บางใหญ่", "บางบัวทอง", "ไทรน้อย", "ปากเกร็ด", "นนทบุรี", "รัตนาธิเบศร์", "ราชพฤกษ์", "กาญจนาภิเษก"]
+  },
+  { 
+    name: "โซนพระประแดง / พระสมุทรเจดีย์", 
+    address: "อ.พระประแดง จ.สมุทรปราการ", 
+    lat: 13.6582, 
+    lng: 100.5342, 
+    province: "สมุทรปราการ",
+    keywords: ["พระประแดง", "พระสมุทรเจดีย์", "สุขสวัสดิ์", "ปู่เจ้าสมิงพราย"]
+  },
+  { 
+    name: "โซนบางนา-ตราด กม.10 / บางพลี", 
+    address: "ถ.บางนา-ตราด ต.บางพลีใหญ่ จ.สมุทรปราการ", 
+    lat: 13.6324, 
+    lng: 100.6892, 
+    province: "สมุทรปราการ",
+    keywords: ["บางนา", "บางพลี", "กิ่งแก้ว", "เทพารักษ์", "บางปู", "บางบ่อ", "บางเสาธง", "สมุทรปราการ"]
+  },
+  { 
+    name: "โซนลาดกระบัง / มีนบุรี / สุวรรณภูมิ", 
+    address: "เขตลาดกระบัง กทม.", 
+    lat: 13.7235, 
+    lng: 100.7852, 
+    province: "กรุงเทพฯ",
+    keywords: ["ลาดกระบัง", "มีนบุรี", "ร่มเกล้า", "สุวรรณภูมิ", "ประเวศ", "คลองสามวา", "หนองจอก"]
+  },
+  { 
+    name: "โซนรังสิต / คลองหลวง / ปทุมธานี", 
+    address: "ต.คลองหนึ่ง อ.คลองหลวง จ.ปทุมธานี", 
+    lat: 14.0215, 
+    lng: 100.6145, 
+    province: "ปทุมธานี",
+    keywords: ["รังสิต", "ปทุมธานี", "คลองหลวง", "นวนคร", "ธัญบุรี", "ลำลูกกา", "สามโคก", "เมืองปทุมธานี"]
+  },
+  { 
+    name: "โซนวังน้อย / พระนครศรีอยุธยา", 
+    address: "อ.วังน้อย จ.พระนครศรีอยุธยา", 
+    lat: 14.2341, 
+    lng: 100.7125, 
+    province: "อยุธยา",
+    keywords: ["วังน้อย", "อยุธยา", "พระนครศรีอยุธยา", "บางปะอิน", "โรจนะ", "อุทัย", "เสนา"]
+  },
+  { 
+    name: "โซนนิคมอมตะซิตี้ / เมืองชลบุรี", 
+    address: "อ.เมืองชลบุรี จ.ชลบุรี", 
+    lat: 13.3611, 
+    lng: 100.9847, 
+    province: "ชลบุรี",
+    keywords: ["ชลบุรี", "อมตะ", "อมตะนคร", "พานทอง", "บ้านบึง", "เมืองชลบุรี"]
+  },
+  { 
+    name: "โซนศรีราชา / แหลมฉบัง / พัทยา", 
+    address: "อ.ศรีราชา จ.ชลบุรี", 
+    lat: 13.1678, 
+    lng: 100.9315, 
+    province: "ชลบุรี",
+    keywords: ["ศรีราชา", "แหลมฉบัง", "พัทยา", "บางละมุง", "สัตหีบ", "บ่อวิน"]
+  },
+  { 
+    name: "โซนนิคมพัฒนา / ปลวกแดง / ระยอง", 
+    address: "อ.ปลวกแดง จ.ระยอง", 
+    lat: 12.9812, 
+    lng: 101.2154, 
+    province: "ระยอง",
+    keywords: ["ระยอง", "ปลวกแดง", "นิคมพัฒนา", "มาบตาพุด", "เมืองระยอง", "บ้านฉาง"]
+  },
+  { 
+    name: "โซนบ้านโป่ง / เมืองราชบุรี", 
+    address: "อ.บ้านโป่ง จ.ราชบุรี", 
+    lat: 13.8115, 
+    lng: 99.8778, 
+    province: "ราชบุรี",
+    keywords: ["บ้านโป่ง", "ราชบุรี", "โพธาราม", "เมืองราชบุรี", "ดำเนินสะดวก"]
+  },
+  { 
+    name: "โซนเมืองเพชรบุรี / ชะอำ / หัวหิน", 
+    address: "อ.เมืองเพชรบุรี จ.เพชรบุรี", 
+    lat: 13.1112, 
+    lng: 99.9392, 
+    province: "เพชรบุรี",
+    keywords: ["เพชรบุรี", "เขาย้อย", "ท่ายาง", "ชะอำ", "หัวหิน", "ปราณบุรี"]
+  },
+  { 
+    name: "โซนแปลงยาว / บางปะกง / ฉะเชิงเทรา", 
+    address: "อ.บางปะกง จ.ฉะเชิงเทรา", 
+    lat: 13.5412, 
+    lng: 100.9985, 
+    province: "ฉะเชิงเทรา",
+    keywords: ["ฉะเชิงเทรา", "แปดริ้ว", "บางปะกง", "แปลงยาว", "พนมสารคาม", "เวลโกรว์"]
+  },
+  { 
+    name: "โซนหนองแค / แก่งคอย / สระบุรี", 
+    address: "อ.หนองแค จ.สระบุรี", 
+    lat: 14.3412, 
+    lng: 100.8654, 
+    province: "สระบุรี",
+    keywords: ["สระบุรี", "หนองแค", "แก่งคอย", "เมืองสระบุรี", "วิหารแดง"]
+  }
+];
+
+/**
+ * Parse a Google Maps URL, raw latitude/longitude, or text string to extract coordinates.
+ * Supports:
+ * - Any string containing coordinates like `13.5475, 100.2745` or `13.5475 100.2745`
+ * - https://maps.app.goo.gl/... (returns original text or hint)
+ * - https://www.google.com/maps?q=13.5475,100.2745
+ * - https://www.google.com/maps/place/.../@13.5475,100.2745,15z
+ * - https://www.google.com/maps/search/13.5475,100.2745
+ * - https://maps.google.com/?daddr=13.5475,100.2745
+ * - Thai province/district keyword matching (e.g. "ชลบุรี", "รังสิต", "มหาชัย", "พระราม 2")
+ */
+export function parseGoogleMapsInput(input: string): { lat?: number; lng?: number; address?: string; isUrl: boolean; matchedName?: string } {
+  if (!input || !input.trim()) {
+    return { isUrl: false };
+  }
+
+  const trimmed = input.trim();
+  const isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.includes("maps.google") || trimmed.includes("goo.gl");
+
+  // 1. Direct Regex for "@latitude,longitude" in Google Maps URLs (e.g. /@13.5475,100.2745,15z)
+  const atMatch = trimmed.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atMatch) {
+    const lat = parseFloat(atMatch[1]);
+    const lng = parseFloat(atMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return { lat, lng, isUrl: true };
+    }
+  }
+
+  // 2. Regex for "q=lat,lng" or "ll=lat,lng" or "query=lat,lng" or "daddr=lat,lng"
+  const qMatch = trimmed.match(/[?&](?:q|ll|query|destination|daddr)=(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+  if (qMatch) {
+    const lat = parseFloat(qMatch[1]);
+    const lng = parseFloat(qMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return { lat, lng, isUrl: true };
+    }
+  }
+
+  // 3. Regex for "/place/.../data=...!3dlat!4dlng" in new Google Maps URLs
+  const dataMatch = trimmed.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (dataMatch) {
+    const lat = parseFloat(dataMatch[1]);
+    const lng = parseFloat(dataMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return { lat, lng, isUrl: true };
+    }
+  }
+
+  // 4. Raw coordinate anywhere in text string (e.g., "13.5475, 100.2745" or embedded in sentence)
+  const coordMatch = trimmed.match(/(-?\d{1,2}\.\d+)[,\s]+(-?\d{2,3}\.\d+)/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lng = parseFloat(coordMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return { lat, lng, isUrl: isUrl };
+    }
+  }
+
+  // 5. Match with Thai preset locations by keyword / district / province
+  const lower = trimmed.toLowerCase();
+  for (const p of PRESET_LOCATIONS) {
+    const isMatched = 
+      lower.includes(p.name.toLowerCase()) || 
+      lower.includes(p.province.toLowerCase()) || 
+      lower.includes(p.address.toLowerCase()) ||
+      p.keywords.some(kw => lower.includes(kw.toLowerCase()));
+    
+    if (isMatched) {
+      return { 
+        lat: p.lat, 
+        lng: p.lng, 
+        address: p.address, 
+        matchedName: p.name,
+        isUrl: false 
+      };
+    }
+  }
+
+  return { isUrl, address: isUrl ? undefined : trimmed };
+}
+
+/**
+ * Validates whether latitude and longitude are within standard geographical bounds
+ */
+export function isValidLatLng(lat?: number, lng?: number): boolean {
+  if (lat === undefined || lng === undefined) return false;
+  if (isNaN(lat) || isNaN(lng)) return false;
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && (lat !== 0 || lng !== 0);
+}
+
+/**
+ * Calculate Great-Circle Distance via Haversine Formula (in Kilometers)
+ * Applies a 1.25x road factor (winding factor) to closely reflect actual driving distance on Thai road networks.
+ */
+export function calculateRoadDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+  roadFactor: number = 1.25
+): number {
+  if (!isValidLatLng(lat1, lon1) || !isValidLatLng(lat2, lon2)) {
+    return 0;
+  }
+
+  const R = 6371; // Earth radius in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const straightLineDistance = R * c;
+
+  // Road distance with winding adjustment
+  const roadDistance = straightLineDistance * roadFactor;
+  return Math.round(roadDistance * 10) / 10; // 1 decimal place
+}
+
+function deg2rad(deg: number): number {
+  return deg * (Math.PI / 180);
+}
+
+/**
+ * Create a Google Maps Directions URL (Driving Mode) for direct 1-click navigation and route preview.
+ */
+export function createGoogleMapsDirectionsUrl(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  originName?: string,
+  destName?: string
+): string {
+  const origin = `${originLat},${originLng}`;
+  const destination = `${destLat},${destLng}`;
+  return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+}
+
+/**
+ * Calculate delivery cost and distance policy for a specific supplier profile
+ */
+export function calculateSupplierDelivery(
+  supplier: SupplierProfile,
+  destLat?: number,
+  destLng?: number,
+  destAddress?: string,
+  destName?: string,
+  orderTotalAmount?: number,
+  orderTotalWeightKg?: number,
+  selectedTruckId?: string
+): DeliveryCalculationResult | null {
+  // Origin coordinates from supplier profile
+  const originLat = supplier.supplierLocation?.lat || 13.5475;
+  const originLng = supplier.supplierLocation?.lng || 100.2745;
+  const originAddress = supplier.supplierLocation?.address || supplier.location || supplier.name;
+
+  if (!isValidLatLng(destLat, destLng)) {
+    return null;
+  }
+
+  // Calculate driving distance
+  const distanceKm = calculateRoadDistanceKm(originLat, originLng, destLat!, destLng!);
+
+  // Delivery configuration of this specific supplier
+  const deliveryConfig = supplier.deliveryConfig || {
+    pricingMode: "tiered",
+    distanceTiers: [
+      { id: "tier-1", minKm: 0, maxKm: 30, price: 0 },
+      { id: "tier-2", minKm: 31, maxKm: 60, price: 3000 },
+      { id: "tier-3", minKm: 61, maxKm: 90, price: 4500 },
+      { id: "tier-4", minKm: 91, maxKm: 120, price: 6000 },
+    ],
+    excessRatePerKm: 35,
+    freeRadiusKm: 30,
+    ratePerKm: 25,
+    basePrice: 0,
+    minOrderFreeAmount: 0,
+    minOrderCriteria: "full_truckload_96",
+    fullLoadThresholdPercent: 96,
+    minWeightKg: 0,
+  };
+
+  const minOrderCriteria = deliveryConfig.minOrderCriteria || "full_truckload_96";
+  const fullLoadPercent = deliveryConfig.fullLoadThresholdPercent ?? 96;
+  const availableTrucks: SupplierTruck[] = (deliveryConfig.availableTrucks && deliveryConfig.availableTrucks.length > 0)
+    ? deliveryConfig.availableTrucks
+    : [
+        { id: "truck_6w", name: "รถบรรทุก 6 ล้อ", capacityKg: 7500, label: "7.5 ตัน", enabled: true },
+        { id: "truck_10w", name: "รถบรรทุก 10 ล้อ", capacityKg: 13500, label: "13.5 ตัน", enabled: true },
+        { id: "truck_12w", name: "รถบรรทุก 12 ล้อ", capacityKg: 16500, label: "16.5 ตัน", enabled: true },
+        { id: "truck_trailer", name: "รถเทเลอร์", capacityKg: 25000, label: "25.0 ตัน", enabled: true },
+        { id: "truck_semi", name: "รถพ่วง", capacityKg: 31000, label: "31.0 ตัน", enabled: true },
+      ];
+
+  // Evaluate full load status if weight is provided
+  let fullLoadStatus: FullLoadEvaluation | undefined = undefined;
+  if (orderTotalWeightKg !== undefined && orderTotalWeightKg > 0) {
+    const enabledTrucks = availableTrucks.filter((t) => t.enabled);
+    const activeFleet = enabledTrucks.length > 0 ? enabledTrucks : availableTrucks;
+    
+    let chosenTruck = selectedTruckId 
+      ? activeFleet.find((t) => t.id === selectedTruckId) 
+      : undefined;
+
+    if (!chosenTruck) {
+      // Find smallest enabled truck that fits or largest available
+      chosenTruck = activeFleet.find((t) => t.capacityKg >= orderTotalWeightKg) || activeFleet[activeFleet.length - 1];
+    }
+
+    if (chosenTruck) {
+      const thresholdFactor = fullLoadPercent / 100;
+      const requiredMinWeightKg = Math.round(chosenTruck.capacityKg * thresholdFactor);
+      const isFullLoad = orderTotalWeightKg >= requiredMinWeightKg && orderTotalWeightKg <= chosenTruck.capacityKg;
+      const percentLoaded = Math.round((orderTotalWeightKg / chosenTruck.capacityKg) * 100);
+      const missingWeightKg = Math.max(0, requiredMinWeightKg - orderTotalWeightKg);
+      
+      // Calculate trips / vehicles needed for this chosen truck type
+      const tripsNeeded = Math.max(1, Math.ceil(orderTotalWeightKg / chosenTruck.capacityKg));
+
+      // Calculate weight distribution across trips
+      const tripDetails: TripDetail[] = [];
+      let remainingWeight = orderTotalWeightKg;
+      for (let i = 1; i <= tripsNeeded; i++) {
+        const tripWeight = Math.min(remainingWeight, chosenTruck.capacityKg);
+        const tripLoadPct = Math.round((tripWeight / chosenTruck.capacityKg) * 100);
+        tripDetails.push({
+          tripNumber: i,
+          weightKg: tripWeight,
+          maxCapacityKg: chosenTruck.capacityKg,
+          loadPercent: tripLoadPct,
+          isFullLoad: tripWeight >= Math.round(chosenTruck.capacityKg * thresholdFactor),
+        });
+        remainingWeight -= tripWeight;
+      }
+
+      // Comparison across all trucks in active fleet
+      const truckTripOptions: TruckTripOption[] = activeFleet.map((t) => {
+        const tTrips = Math.max(1, Math.ceil(orderTotalWeightKg / t.capacityKg));
+        return {
+          truckId: t.id,
+          truckName: t.name,
+          capacityKg: t.capacityKg,
+          tripsNeeded: tTrips,
+          isCurrent: t.id === chosenTruck?.id,
+          canFitSingleTrip: orderTotalWeightKg <= t.capacityKg,
+          isLargerSingleTripAlt: orderTotalWeightKg <= t.capacityKg && t.capacityKg > (chosenTruck?.capacityKg || 0),
+        };
+      });
+
+      // Find the best alternative truck that can deliver everything in 1 trip
+      const singleTripAlternative = truckTripOptions.find(
+        (opt) => opt.isLargerSingleTripAlt && opt.canFitSingleTrip
+      );
+
+      let statusMessage = "";
+      let detailMessage = "";
+
+      if (percentLoaded > 100) {
+        statusMessage = `น้ำหนักเกินพิกัด 1 คัน (${percentLoaded}%) → ต้องใช้ทั้งหมด ${tripsNeeded} คัน (${tripsNeeded} เที่ยว)`;
+        detailMessage = `น้ำหนักรวม ${orderTotalWeightKg.toLocaleString()} กก. เกินพิกัด 1 คัน (${chosenTruck.capacityKg.toLocaleString()} กก.) ของ${chosenTruck.name} โดยต้องจัดส่ง ${tripsNeeded} คัน (เที่ยวละไม่เกิน ${chosenTruck.capacityKg.toLocaleString()} กก.)`;
+      } else if (orderTotalWeightKg >= requiredMinWeightKg) {
+        statusMessage = `เข้าเกณฑ์เต็มเที่ยวแล้ว (${percentLoaded}% ≥ ${fullLoadPercent}%) → ใช้ 1 คัน (1 เที่ยว)`;
+        detailMessage = `ได้ระวางคุ้มค่าพร้อมจัดส่งสำหรับ ${chosenTruck.name} 1 คัน (เกณฑ์ ${fullLoadPercent}% = ${requiredMinWeightKg.toLocaleString()} กก.)`;
+      } else {
+        statusMessage = `ยังไม่เต็มเที่ยว (${percentLoaded}% / ${fullLoadPercent}%) → ใช้ 1 คัน`;
+        detailMessage = `ยังขาดอีก ${missingWeightKg.toLocaleString()} กก. จึงจะถึงเกณฑ์เต็มเที่ยว ${fullLoadPercent}% ของ ${chosenTruck.name}`;
+      }
+
+      // Generate Smart Fleet Recommendation Plans
+      const fleetRecommendationPlans: FleetRecommendationPlan[] = [];
+
+      // 1. Uniform Fleet Options for each truck in activeFleet
+      const sortedFleetDesc = [...activeFleet].sort((a, b) => b.capacityKg - a.capacityKg);
+      const sortedFleetAsc = [...activeFleet].sort((a, b) => a.capacityKg - b.capacityKg);
+
+      // 2. Best Mixed Fleet Plan (Pack largest truck first, then size down the last truck to minimize empty space)
+      const mixedTrips: FleetPlanTrip[] = [];
+      let remWeightMixed = orderTotalWeightKg;
+      let tripCount = 1;
+
+      while (remWeightMixed > 0 && tripCount <= 20) {
+        // If remaining weight is small enough to fit in a smaller truck, pick the smallest truck that can hold it
+        let bestTruckForRem = sortedFleetAsc.find(t => t.capacityKg >= remWeightMixed);
+        if (!bestTruckForRem) {
+          // If larger than any truck, use the largest truck
+          bestTruckForRem = sortedFleetDesc[0];
+        }
+
+        const allocWeight = Math.min(remWeightMixed, bestTruckForRem.capacityKg);
+        const loadPct = Math.round((allocWeight / bestTruckForRem.capacityKg) * 100);
+        const isFull = allocWeight >= Math.round(bestTruckForRem.capacityKg * thresholdFactor);
+        const remCap = Math.max(0, bestTruckForRem.capacityKg - allocWeight);
+
+        mixedTrips.push({
+          tripNumber: tripCount,
+          truckId: bestTruckForRem.id,
+          truckName: bestTruckForRem.name,
+          capacityKg: bestTruckForRem.capacityKg,
+          allocatedWeightKg: allocWeight,
+          loadPercent: loadPct,
+          remainingKg: remCap,
+          isFullLoad: isFull,
+        });
+
+        remWeightMixed -= allocWeight;
+        tripCount++;
+      }
+
+      const totalMixedCap = mixedTrips.reduce((s, t) => s + t.capacityKg, 0);
+      const totalMixedEmpty = Math.max(0, totalMixedCap - orderTotalWeightKg);
+      const avgMixedUtil = totalMixedCap > 0 ? Math.round((orderTotalWeightKg / totalMixedCap) * 100) : 100;
+
+      const isMixedDistinct = mixedTrips.some(t => t.truckId !== mixedTrips[0]?.truckId);
+
+      const bestValuePlan: FleetRecommendationPlan = {
+        id: "plan_best_mixed",
+        type: isMixedDistinct ? "best_mixed" : "single_type",
+        title: isMixedDistinct 
+          ? `🏆 แผนผสมคุ้มค่าสูงสุด (ระวางแน่น ${avgMixedUtil}%)`
+          : `🏆 แผนจัดรถคุ้มค่าสูงสุด (${mixedTrips[0]?.truckName || chosenTruck.name})`,
+        badge: isMixedDistinct ? "จัดระวางคุ้มสุด" : (avgMixedUtil >= fullLoadPercent ? "เต็มเที่ยว 96%" : "เที่ยวประหยัด"),
+        badgeColor: "emerald",
+        isRecommended: true,
+        totalTrips: mixedTrips.length,
+        totalCapacityKg: totalMixedCap,
+        avgUtilizationPct: avgMixedUtil,
+        emptyCapacityKg: totalMixedEmpty,
+        trips: mixedTrips,
+        summary: isMixedDistinct
+          ? `ใช้ ${mixedTrips.map(t => `${t.truckName}`).join(" + ")} (${mixedTrips.length} เที่ยว)`
+          : `ใช้ ${mixedTrips[0]?.truckName || chosenTruck.name} จำนวน ${mixedTrips.length} เที่ยว`,
+        savingsHighlights: totalMixedEmpty > 0 
+          ? `เหลือพื้นที่ว่างเพียง ${totalMixedEmpty.toLocaleString()} กก. (ประหยัดค่ารถเที่ยวสุดท้าย)`
+          : `บรรทุกเต็มพิกัด 100% คุ้มค่าสูงสุด`,
+      };
+
+      fleetRecommendationPlans.push(bestValuePlan);
+
+      // Add Current Truck Plan if different or as standard comparison
+      const currentTruckTrips: FleetPlanTrip[] = tripDetails.map(t => ({
+        tripNumber: t.tripNumber,
+        truckId: chosenTruck.id,
+        truckName: chosenTruck.name,
+        capacityKg: chosenTruck.capacityKg,
+        allocatedWeightKg: t.weightKg,
+        loadPercent: t.loadPercent,
+        remainingKg: Math.max(0, chosenTruck.capacityKg - t.weightKg),
+        isFullLoad: t.isFullLoad,
+      }));
+      const currentTotalCap = chosenTruck.capacityKg * tripsNeeded;
+      const currentTotalEmpty = Math.max(0, currentTotalCap - orderTotalWeightKg);
+      const currentAvgUtil = currentTotalCap > 0 ? Math.round((orderTotalWeightKg / currentTotalCap) * 100) : 100;
+
+      fleetRecommendationPlans.push({
+        id: `plan_current_${chosenTruck.id}`,
+        type: "single_type",
+        title: `🚚 แผนใช้ ${chosenTruck.name} ล้วน`,
+        badge: "กำลังเลือกอยู่",
+        badgeColor: "blue",
+        isCurrent: true,
+        totalTrips: tripsNeeded,
+        totalCapacityKg: currentTotalCap,
+        avgUtilizationPct: currentAvgUtil,
+        emptyCapacityKg: currentTotalEmpty,
+        trips: currentTruckTrips,
+        summary: `ใช้ ${chosenTruck.name} ทั้งหมด ${tripsNeeded} เที่ยว`,
+        savingsHighlights: currentTotalEmpty > 0
+          ? `เที่ยวสุดท้ายเหลือพื้นที่ว่าง ${currentTotalEmpty.toLocaleString()} กก.`
+          : `ระวาง 100%`,
+      });
+
+      // Add other active trucks comparison
+      for (const otherTruck of sortedFleetDesc) {
+        if (otherTruck.id === chosenTruck.id) continue;
+        const oTrips = Math.max(1, Math.ceil(orderTotalWeightKg / otherTruck.capacityKg));
+        const oTotalCap = otherTruck.capacityKg * oTrips;
+        const oTotalEmpty = Math.max(0, oTotalCap - orderTotalWeightKg);
+        const oAvgUtil = Math.round((orderTotalWeightKg / oTotalCap) * 100);
+
+        const oTripAllocations: FleetPlanTrip[] = [];
+        let oRem = orderTotalWeightKg;
+        for (let i = 1; i <= oTrips; i++) {
+          const w = Math.min(oRem, otherTruck.capacityKg);
+          oTripAllocations.push({
+            tripNumber: i,
+            truckId: otherTruck.id,
+            truckName: otherTruck.name,
+            capacityKg: otherTruck.capacityKg,
+            allocatedWeightKg: w,
+            loadPercent: Math.round((w / otherTruck.capacityKg) * 100),
+            remainingKg: Math.max(0, otherTruck.capacityKg - w),
+            isFullLoad: w >= Math.round(otherTruck.capacityKg * thresholdFactor),
+          });
+          oRem -= w;
+        }
+
+        fleetRecommendationPlans.push({
+          id: `plan_truck_${otherTruck.id}`,
+          type: oTrips === 1 ? "single_trip_upgrade" : "single_type",
+          title: oTrips === 1 ? `⚡ แผนเที่ยวเดียวจบ (${otherTruck.name})` : `🚛 แผน ${otherTruck.name} ล้วน`,
+          badge: oTrips === 1 ? "1 เที่ยวจบ" : `${oTrips} เที่ยว (${oAvgUtil}%)`,
+          badgeColor: oTrips === 1 ? "purple" : "neutral",
+          totalTrips: oTrips,
+          totalCapacityKg: oTotalCap,
+          avgUtilizationPct: oAvgUtil,
+          emptyCapacityKg: oTotalEmpty,
+          trips: oTripAllocations,
+          summary: `ใช้ ${otherTruck.name} จำนวน ${oTrips} เที่ยว`,
+          savingsHighlights: oTrips === 1 
+            ? `จบงานในเที่ยวเดียว ไม่ต้องรอรถวิ่งรอบสอง`
+            : `พื้นที่ว่างรวม ${oTotalEmpty.toLocaleString()} กก.`,
+        });
+      }
+
+      fullLoadStatus = {
+        isFullLoad,
+        currentWeightKg: orderTotalWeightKg,
+        truckName: chosenTruck.name,
+        truckCapacityKg: chosenTruck.capacityKg,
+        capacityKg: chosenTruck.capacityKg,
+        thresholdPercent: fullLoadPercent,
+        requiredMinWeightKg,
+        targetWeightKg: requiredMinWeightKg,
+        percentLoaded,
+        loadPercent: percentLoaded,
+        missingWeightKg,
+        tripsNeeded,
+        tripDetails,
+        truckTripOptions,
+        singleTripAlternative,
+        fleetRecommendationPlans,
+        bestValuePlan,
+        statusMessage,
+        detailMessage,
+      };
+    }
+  }
+
+  const minOrderFree = deliveryConfig.minOrderFreeAmount ?? 0;
+  const isOrderAmountFree = minOrderFree > 0 && orderTotalAmount !== undefined && orderTotalAmount >= minOrderFree;
+
+  // Use tiered pricing if distanceTiers is available and not disabled
+  const hasTiers = deliveryConfig.distanceTiers && deliveryConfig.distanceTiers.length > 0;
+  const isTieredMode = deliveryConfig.pricingMode !== "per_km" && hasTiers;
+
+  let deliveryFee = 0;
+  let isFreeDelivery = false;
+  let excessDistanceKm = 0;
+  let freeRadius = deliveryConfig.freeRadiusKm ?? 30;
+  let ratePerKm = deliveryConfig.ratePerKm ?? 25;
+  let basePrice = deliveryConfig.basePrice ?? 0;
+  let matchedTier: DistanceTier | undefined = undefined;
+  let reason = "";
+
+  if (isOrderAmountFree) {
+    isFreeDelivery = true;
+    deliveryFee = 0;
+    reason = `ยอดสั่งซื้อครบ ฿${minOrderFree.toLocaleString()} (ได้รับสิทธิ์ส่งฟรีตามเงื่อนไขยอดสั่งซื้อขั้นต่ำ)`;
+  } else if (isTieredMode) {
+    const rawTiers = deliveryConfig.distanceTiers || [];
+    const sortedTiers = [...rawTiers].sort((a, b) => a.minKm - b.minKm);
+    const highestTier = sortedTiers[sortedTiers.length - 1];
+    const firstTier = sortedTiers[0];
+    const excessRate = deliveryConfig.excessRatePerKm ?? 35;
+
+    // Detect free radius from tiers
+    const freeTier = sortedTiers.find((t) => t.price === 0);
+    if (freeTier) {
+      freeRadius = freeTier.maxKm;
+    }
+
+    // Check if distance matches any tier
+    const foundTier = sortedTiers.find(
+      (t) => distanceKm >= t.minKm && distanceKm <= t.maxKm
+    );
+
+    if (foundTier) {
+      matchedTier = foundTier;
+      deliveryFee = foundTier.price;
+      isFreeDelivery = foundTier.price === 0;
+      if (isFreeDelivery) {
+        reason = `ระยะทาง ${distanceKm} กม. อยู่ในช่วง ${foundTier.minKm}–${foundTier.maxKm} กม. (ส่งฟรี ฿0)`;
+      } else {
+        reason = `ระยะทาง ${distanceKm} กม. อยู่ในช่วง ${foundTier.minKm}–${foundTier.maxKm} กม. (คิดค่าส่ง ฿${foundTier.price.toLocaleString()})`;
+      }
+    } else if (distanceKm < firstTier.minKm) {
+      // Under lowest tier
+      matchedTier = firstTier;
+      deliveryFee = firstTier.price;
+      isFreeDelivery = firstTier.price === 0;
+      reason = `ระยะทาง ${distanceKm} กม. อยู่ในเกณฑ์ช่วงแรก 0–${firstTier.maxKm} กม. (${isFreeDelivery ? "ส่งฟรี ฿0" : `ค่าส่ง ฿${firstTier.price.toLocaleString()}`})`;
+    } else if (distanceKm > highestTier.maxKm) {
+      // Over highest tier
+      excessDistanceKm = Math.max(0, Math.round((distanceKm - highestTier.maxKm) * 10) / 10);
+      deliveryFee = highestTier.price + Math.round(excessDistanceKm * excessRate);
+      isFreeDelivery = false;
+      reason = `เกินช่วงระยะทางสูงสุด (${highestTier.maxKm} กม.) เป็นระยะ ${excessDistanceKm} กม. (คิดอัตราช่วง ฿${highestTier.price.toLocaleString()} + ส่วนเกิน ${excessRate} บ./กม.)`;
+    }
+  } else {
+    // Standard per_km mode
+    const isDistanceFree = distanceKm <= freeRadius;
+    isFreeDelivery = isDistanceFree;
+
+    if (isDistanceFree) {
+      reason = `อยู่ในระยะส่งฟรี (ระยะทาง ${distanceKm} กม. ≤ สิทธิ์ส่งฟรี ${freeRadius} กม.)`;
+    } else {
+      excessDistanceKm = Math.max(0, Math.round((distanceKm - freeRadius) * 10) / 10);
+      deliveryFee = basePrice + Math.round(excessDistanceKm * ratePerKm);
+      reason = `เกินระยะส่งฟรี ${excessDistanceKm} กม. (คิดอัตราส่วนเกิน ${ratePerKm} บาท/กม.${basePrice > 0 ? ` + ค่าเริ่ม ฿${basePrice}` : ""})`;
+    }
+  }
+
+  const directionsUrl = createGoogleMapsDirectionsUrl(
+    originLat,
+    originLng,
+    destLat!,
+    destLng!,
+    supplier.name,
+    destName || destAddress
+  );
+
+  return {
+    supplierId: supplier.id,
+    supplierName: supplier.name,
+    origin: {
+      lat: originLat,
+      lng: originLng,
+      address: originAddress,
+      name: supplier.name,
+    },
+    destination: {
+      lat: destLat!,
+      lng: destLng!,
+      address: destAddress || `${destLat!.toFixed(4)}, ${destLng!.toFixed(4)}`,
+      name: destName,
+    },
+    distanceKm,
+    isFreeDelivery,
+    freeRadiusKm: freeRadius,
+    excessDistanceKm,
+    ratePerKm,
+    basePrice,
+    deliveryFee,
+    matchedTier,
+    distanceTiers: deliveryConfig.distanceTiers,
+    directionsUrl,
+    reason,
+    availableTrucks,
+    minOrderCriteria,
+    fullLoadThresholdPercent: fullLoadPercent,
+    fullLoadStatus,
+  };
+}
