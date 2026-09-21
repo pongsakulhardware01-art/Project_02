@@ -83,7 +83,10 @@ export function initFirebase(): Firestore | null {
       
       firestoreDb = initializeFirestore(
         firebaseApp,
-        { experimentalForceLongPolling: true },
+        {
+          experimentalForceLongPolling: true,
+          ignoreUndefinedProperties: true,
+        },
         cachedFirebaseConfig?.firestoreDatabaseId
       );
 

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AppSettings, WeightItem } from "./types";
-import { defaultSettings, defaultSuppliers, APP_VERSION, weightOptions, truckCapacities } from "./data";
+import { defaultSettings, defaultSuppliers, defaultPrices, defaultCosts, defaultWeights, APP_VERSION, weightOptions, truckCapacities } from "./data";
 import { getDynamicWeightOptions } from "./utils/productCatalog";
 import SlabCalculator from "./components/SlabCalculator";
 import PileCalculator from "./components/PileCalculator";
@@ -176,9 +176,25 @@ export default function App() {
     return defaultSettings;
   });
 
+  // Track last local user action to avoid polling race conditions
+  const lastUserActionTime = useRef<number>(0);
+  const [supplierNotice, setSupplierNotice] = useState<string | null>(null);
+
+  const showSupplierToast = (msg: string) => {
+    setSupplierNotice(msg);
+    setTimeout(() => {
+      setSupplierNotice(null);
+    }, 3500);
+  };
+
   // Fetch from Express server on mount + start real-time polling every 3 seconds
   useEffect(() => {
     const fetchSharedSettings = async () => {
+      // Avoid overwriting if user just made a change in the UI within 4 seconds
+      if (Date.now() - lastUserActionTime.current < 4000) {
+        return;
+      }
+
       try {
         const res = await fetch("/api/settings");
         if (res.ok) {
@@ -260,6 +276,7 @@ export default function App() {
   const activeSupplier = suppliersList.find((s) => s.id === (settings.activeSupplierId || "pongsakul_main")) || suppliersList[0];
 
   const handleSelectSupplier = async (supplierId: string) => {
+    lastUserActionTime.current = Date.now();
     const target = suppliersList.find((s) => s.id === supplierId);
     if (!target) return;
 
@@ -268,12 +285,16 @@ export default function App() {
       targetDeleted = targetDeleted.filter((id) => id.startsWith("custom_"));
     }
 
+    const targetPrices = { ...defaultPrices, ...(target.prices || {}) };
+    const targetCosts = { ...defaultCosts, ...(target.costs || {}) };
+    const targetWeights = { ...defaultWeights, ...(target.weights || {}) };
+
     const updatedSettings: AppSettings = {
       ...settings,
       activeSupplierId: supplierId,
-      prices: target.prices,
-      costs: target.costs || settings.costs,
-      weights: target.weights,
+      prices: targetPrices,
+      costs: targetCosts,
+      weights: targetWeights,
       customProducts: target.customProducts || [],
       deletedItemIds: targetDeleted,
       suppliers: suppliersList,
@@ -281,13 +302,21 @@ export default function App() {
 
     setSettings(updatedSettings);
     localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
+    showSupplierToast(`สลับใช้งานราคาและพิกัดของ "${target.name}" เรียบร้อยแล้ว`);
 
     try {
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedSettings),
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.settings) {
+          setSettings(json.settings);
+          localStorage.setItem("pongsakulSettings", JSON.stringify(json.settings));
+        }
+      }
     } catch (e) {
       // Offline fallback
     }
@@ -1170,6 +1199,36 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* 7. SUPPLIER SWITCH GLOBAL NOTIFICATION TOAST */}
+      <AnimatePresence>
+        {supplierNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -24, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -24, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-5 right-5 z-50 bg-neutral-900/95 backdrop-blur-md text-white px-4 py-3 rounded-2xl shadow-2xl border border-neutral-700/80 flex items-center gap-3 max-w-md pointer-events-auto"
+          >
+            <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl shrink-0">
+              <Check size={18} className="stroke-[3]" />
+            </div>
+            <div className="min-w-0 pr-2">
+              <p className="font-bold text-xs sm:text-sm text-white truncate">{supplierNotice}</p>
+              <p className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                ซิงค์คลาวด์และอัปเดตราคาคำนวณเรียบร้อยแล้ว ✨
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSupplierNotice(null)}
+              className="text-neutral-400 hover:text-white p-1 rounded-lg transition shrink-0 ml-auto"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 

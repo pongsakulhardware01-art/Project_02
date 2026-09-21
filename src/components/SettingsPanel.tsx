@@ -788,24 +788,46 @@ export default function SettingsPanel({ settings, setSettings }: SettingsPanelPr
     const target = currentSuppliers.find((s) => s.id === targetId);
     if (!target) return;
 
+    const targetPrices = { ...defaultPrices, ...(target.prices || {}) };
+    const targetCosts = { ...defaultCosts, ...(target.costs || {}) };
+    const targetWeights = { ...defaultWeights, ...(target.weights || {}) };
+    const targetCustom = target.customProducts || [];
+    const targetDeleted = target.deletedItemIds || [];
+
     const updatedSettings: AppSettings = {
       ...settings,
       activeSupplierId: targetId,
-      prices: target.prices,
-      costs: target.costs,
-      weights: target.weights,
+      prices: targetPrices,
+      costs: targetCosts,
+      weights: targetWeights,
+      customProducts: targetCustom,
+      deletedItemIds: targetDeleted,
       suppliers: currentSuppliers,
     };
+
+    setSelectedSupplierId(targetId);
+    setPricesInput(targetPrices);
+    setCostsInput(targetCosts);
+    setWeightsInput(targetWeights);
+    setCustomProducts(targetCustom);
+    setDeletedItemIds(targetDeleted);
 
     setSettings(updatedSettings);
     localStorage.setItem("pongsakulSettings", JSON.stringify(updatedSettings));
 
     try {
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedSettings),
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.settings) {
+          setSettings(json.settings);
+          localStorage.setItem("pongsakulSettings", JSON.stringify(json.settings));
+        }
+      }
       showNotify(`สลับใช้งานราคา ต้นทุน และพิกัดน้ำหนักของ "${target.name}" เรียบร้อยแล้ว! 🏢✨`);
     } catch (e) {
       showNotify(`สลับใช้งานราคาของ "${target.name}" ในเครื่องนี้เรียบร้อย`);

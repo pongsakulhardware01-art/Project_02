@@ -56,7 +56,7 @@ export function sanitizeSettings(data: any): AppSettings {
   const activeSupplierId = data.activeSupplierId || suppliers[0]?.id || "pongsakul_main";
   const activeSupplier = suppliers.find((s) => s.id === activeSupplierId) || suppliers[0];
 
-  return {
+  const cleanResult: AppSettings = {
     activeSupplierId,
     suppliers,
     prices: { ...defaultPrices, ...(activeSupplier?.prices || data.prices || {}) },
@@ -66,8 +66,20 @@ export function sanitizeSettings(data: any): AppSettings {
       ? activeSupplier.customProducts
       : (Array.isArray(data.customProducts) ? data.customProducts : []),
     deletedItemIds: cleanedDeleted,
-    defaultDestination: data.defaultDestination || undefined,
+    ...(data.defaultDestination && typeof data.defaultDestination === "object"
+      ? {
+          defaultDestination: {
+            name: data.defaultDestination.name || "",
+            address: data.defaultDestination.address || "",
+            mapsUrl: data.defaultDestination.mapsUrl || "",
+            lat: typeof data.defaultDestination.lat === "number" ? data.defaultDestination.lat : 0,
+            lng: typeof data.defaultDestination.lng === "number" ? data.defaultDestination.lng : 0,
+          },
+        }
+      : {}),
   };
+
+  return JSON.parse(JSON.stringify(cleanResult));
 }
 
 /**
@@ -107,9 +119,10 @@ export async function loadAndInitializeSettings(): Promise<AppSettings> {
   cachedSettings = sanitized;
 
   // 4. Persist to Firestore and disk to keep both in sync
+  const firestorePayload = JSON.parse(JSON.stringify(sanitized));
   if (db) {
     try {
-      await setDoc(doc(db, "settings", "config"), sanitized);
+      await setDoc(doc(db, "settings", "config"), firestorePayload);
     } catch (e) {
       console.error("Failed to persist initialized settings to Firestore:", e);
     }
@@ -212,11 +225,12 @@ export async function saveSettings(newSettings: any): Promise<AppSettings> {
   const sanitized = sanitizeSettings(newSettings);
   cachedSettings = sanitized;
 
+  const firestorePayload = JSON.parse(JSON.stringify(sanitized));
   const db = getFirestoreDb();
   if (db) {
     try {
-      await setDoc(doc(db, "settings", "config"), sanitized);
-      console.log("Settings successfully written to Firestore");
+      await setDoc(doc(db, "settings", "config"), firestorePayload);
+      console.log(`Settings successfully written to Firestore for activeSupplier: ${sanitized.activeSupplierId}`);
     } catch (e) {
       console.error("Error saving settings to Firestore:", e);
     }
@@ -224,7 +238,7 @@ export async function saveSettings(newSettings: any): Promise<AppSettings> {
 
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(sanitized, null, 2), "utf-8");
-    console.log("Settings successfully written to settings-db.json");
+    console.log(`Settings successfully written to settings-db.json for activeSupplier: ${sanitized.activeSupplierId}`);
   } catch (e) {
     console.error("Error saving settings to disk:", e);
   }
