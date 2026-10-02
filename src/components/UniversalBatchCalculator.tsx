@@ -306,6 +306,26 @@ export default function UniversalBatchCalculator({
               if (isPiece && (updated.length === "" || updated.length === 0)) {
                 updated.length = 1.0;
               }
+            } else if (updated.category === "pile") {
+              const isJointSupported = value === "i18" || value === "i22" || value === "i26" || value === "i30" || value === "i35" || value === "i40" ||
+                                        value === "s18" || value === "s22" || value === "s26" || value === "s30" || value === "s35" || value === "s40";
+              const curLen = typeof updated.length === "number" ? updated.length : parseFloat(String(updated.length));
+              if (isJointSupported && typeof curLen === "number" && curLen >= 8) {
+                updated.connectionType = "joint";
+              }
+            }
+          } else if (key === "length") {
+            const numLen = typeof value === "number" ? value : parseFloat(String(value));
+            if (updated.category === "pile" && typeof numLen === "number" && !isNaN(numLen)) {
+              const isJointSupported = updated.model === "i18" || updated.model === "i22" || updated.model === "i26" || updated.model === "i30" || updated.model === "i35" || updated.model === "i40" ||
+                                        updated.model === "s18" || updated.model === "s22" || updated.model === "s26" || updated.model === "s30" || updated.model === "s35" || updated.model === "s40";
+              if (isJointSupported) {
+                if (numLen >= 8) {
+                  updated.connectionType = "joint";
+                } else if (numLen < 8 && updated.connectionType === "joint") {
+                  updated.connectionType = "single";
+                }
+              }
             }
           }
           return updated;
@@ -592,6 +612,15 @@ export default function UniversalBatchCalculator({
       // Guard boundaries
       if (typeof length === "number" && (length < 0.1 || length > 22)) length = 2.0;
 
+      // Auto-adjust pile connection to joint if length >= 8
+      if (category === "pile" && typeof length === "number" && length >= 8) {
+        const isJointSupported = model === "i18" || model === "i22" || model === "i26" || model === "i30" || model === "i35" || model === "i40" ||
+                                  model === "s18" || model === "s22" || model === "s26" || model === "s30" || model === "s35" || model === "s40";
+        if (isJointSupported) {
+          connectionType = "joint";
+        }
+      }
+
       resultItems.push({
         id: Math.random().toString(36).substring(2, 9),
         category,
@@ -641,19 +670,27 @@ export default function UniversalBatchCalculator({
           throw new Error("AI วิเคราะห์เสร็จสิ้น แต่ตรวจจับรูปแบบสเปกไม่พบ");
         }
 
-        const parsedItems = responseData.items.map((item: any) => ({
-          id: Math.random().toString(36).substring(2, 9),
-          category: item.category || "slab",
-          model: item.model || "normal",
-          length: typeof item.length === "number" ? item.length : 2.5,
-          count: typeof item.count === "number" ? item.count : 10,
-          wireCount: item.wireCount || "auto",
-          tisStandard: item.tisStandard || "no_tis",
-          connectionType: item.connectionType || "single",
-          hcWidth: item.hcWidth || 0.35,
-          customPrice: item.customPrice || "",
-          label: item.label || ""
-        }));
+        const parsedItems = responseData.items.map((item: any) => {
+          const itemLen = typeof item.length === "number" ? item.length : 2.5;
+          const isPileCat = item.category === "pile";
+          const isJointSupported = item.model === "i18" || item.model === "i22" || item.model === "i26" || item.model === "i30" || item.model === "i35" || item.model === "i40" ||
+                                    item.model === "s18" || item.model === "s22" || item.model === "s26" || item.model === "s30" || item.model === "s35" || item.model === "s40";
+          const resolvedConn = (isPileCat && isJointSupported && itemLen >= 8) ? "joint" : (item.connectionType || "single");
+
+          return {
+            id: Math.random().toString(36).substring(2, 9),
+            category: item.category || "slab",
+            model: item.model || "normal",
+            length: itemLen,
+            count: typeof item.count === "number" ? item.count : 10,
+            wireCount: item.wireCount || "auto",
+            tisStandard: item.tisStandard || "no_tis",
+            connectionType: resolvedConn,
+            hcWidth: item.hcWidth || 0.35,
+            customPrice: item.customPrice || "",
+            label: item.label || ""
+          };
+        });
 
         setItems((prev) => [...prev, ...parsedItems]);
         setSuccessMessage(`AI สื่อสารวิเคราะห์เสร็จสิ้น นำเข้า ${parsedItems.length} รายการเสา แผ่นพื้นสำเร็จรูปลงตารางเรียบร้อยครับ! 🎉`);
@@ -709,19 +746,27 @@ export default function UniversalBatchCalculator({
           return;
         }
 
-        const parsedItems = data.items.map((item: any) => ({
-          id: Math.random().toString(36).substring(2, 9),
-          category: item.category || "slab",
-          model: item.model || "normal",
-          length: typeof item.length === "number" ? item.length : 2.5,
-          count: typeof item.count === "number" ? item.count : 10,
-          wireCount: item.wireCount || "auto",
-          tisStandard: item.tisStandard || "no_tis",
-          connectionType: item.connectionType || "single",
-          hcWidth: item.hcWidth || 0.35,
-          customPrice: item.customPrice || "",
-          label: item.label || ""
-        }));
+        const parsedItems = data.items.map((item: any) => {
+          const itemLen = typeof item.length === "number" ? item.length : 2.5;
+          const isPileCat = item.category === "pile";
+          const isJointSupported = item.model === "i18" || item.model === "i22" || item.model === "i26" || item.model === "i30" || item.model === "i35" || item.model === "i40" ||
+                                    item.model === "s18" || item.model === "s22" || item.model === "s26" || item.model === "s30" || item.model === "s35" || item.model === "s40";
+          const resolvedConn = (isPileCat && isJointSupported && itemLen >= 8) ? "joint" : (item.connectionType || "single");
+
+          return {
+            id: Math.random().toString(36).substring(2, 9),
+            category: item.category || "slab",
+            model: item.model || "normal",
+            length: itemLen,
+            count: typeof item.count === "number" ? item.count : 10,
+            wireCount: item.wireCount || "auto",
+            tisStandard: item.tisStandard || "no_tis",
+            connectionType: resolvedConn,
+            hcWidth: item.hcWidth || 0.35,
+            customPrice: item.customPrice || "",
+            label: item.label || ""
+          };
+        });
 
         setItems((prev) => [...prev, ...parsedItems]);
         setSuccessMessage(`สแกนวิเคราะห์บิลใบสั่งงานสำเร็จ นำข้อมูล ${parsedItems.length} รายการแผ่นคอนกรีต/เสาเข็มลงตารางแล้ว! 🎉`);

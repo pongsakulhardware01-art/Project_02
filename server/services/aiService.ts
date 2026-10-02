@@ -227,7 +227,7 @@ export async function scanUniversalFromImage(image: string, mimeType: string, cu
     "Your task is to analyze the image (handwritten note, table screenshot, quotation bill) and extract ALL concrete items. " +
     "Support Categories & Models:\n" +
     "1. Category 'slab': precast concrete slabs. Model: 'normal' (แผ่นพื้นธรรมดา) or 'm.o.c' (แผ่นพื้น มอก.). Attributes: length (meters), count (quantity), wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto').\n" +
-    "2. Category 'pile': prestressed concrete piles. Model: 'i15', 'i18', 'i22', 'i26', 'i30' (เสาเข็มไอ), 's18', 's22', 's26', 's30', 's35', 's40' (เสาสี่เหลี่ยมตัน), 'hex' (หกเหลี่ยม), 'fence3' (เสารั้ว 3 นิ้ว), 'fence4' (เสารั้ว 4 นิ้ว). Attributes: length (meters), count (quantity), tisStandard ('tis' or 'no_tis'), connectionType ('single' or 'joint' - only for i18 and i22).\n" +
+    "2. Category 'pile': prestressed concrete piles. Model: 'i15', 'i18', 'i22', 'i26', 'i30' (เสาเข็มไอ), 's18', 's22', 's26', 's30', 's35', 's40' (เสาสี่เหลี่ยมตัน), 'hex' (หกเหลี่ยม), 'fence3' (เสารั้ว 3 นิ้ว), 'fence4' (เสารั้ว 4 นิ้ว). Attributes: length (meters), count (quantity), tisStandard ('tis' or 'no_tis'), connectionType ('single' or 'joint' for I-piles and S-piles; if length >= 8 meters, connectionType MUST default to 'joint').\n" +
     "3. Category 'hollow_core': precast hollow core slabs. Model: 'hc'. Attributes: length (meters), count (quantity), thickness (optional).\n" +
     "4. Category 'fence': fence posts. Model: 'fence3' (หน้า 3\" นิ้ว) or 'fence4' (หน้า 4\" นิ้ว). Attributes: length (meters), count (quantity).\n" +
     "5. Category 'drainage': concrete pipes (ท่อระบายน้ำ คสล.) and catch basins (บ่อพัก คสล.). \n" +
@@ -312,7 +312,7 @@ export async function parseUniversalFromText(text: string, customProducts: any[]
     "Your task is to parse unstructured, multi-line construction material specifications in Thai, extracting ALL matching concrete products into a structured JSON database.\n" +
     "Key Classes to Extract:\n" +
     "1. Category 'slab': precast concrete slabs (แผ่นพื้นสำเร็จ, แผ่นพื้นคอนกรีต). Model: 'normal' or 'm.o.c' (มอก.). Detect wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto'). Width is always 35cm (0.35m).\n" +
-    "2. Category 'pile': precast concrete piles. Model could be I-shape: 'i15', 'i18', 'i22', 'i26', 'i30' OR Solid Square: 's18', 's22', 's26', 's30', 's35', 's40' OR 'hex' (เสาเข็มหกเหลี่ยม) OR fence posts ('fence3', 'fence4'). Detect tisStandard ('tis' / 'no_tis') and connectionType ('single' / 'joint' for i18,i22 if mentioned).\n" +
+    "2. Category 'pile': precast concrete piles. Model could be I-shape: 'i15', 'i18', 'i22', 'i26', 'i30' OR Solid Square: 's18', 's22', 's26', 's30', 's35', 's40' OR 'hex' (เสาเข็มหกเหลี่ยม) OR fence posts ('fence3', 'fence4'). Detect tisStandard ('tis' / 'no_tis') and connectionType ('single' / 'joint' for I-piles and S-piles; if length >= 8 meters, connectionType MUST default to 'joint').\n" +
     "3. Category 'hollow_core': hollow core slabs (แผ่นกลวง). Model: 'hc'.\n" +
     "4. Category 'fence': fence post. Model: 'fence3' (3 นิ้ว) or 'fence4' (4 นิ้ว).\n" +
     "5. Category 'drainage': concrete drainage pipes (ท่อระบายน้ำ คสล., ท่อระบายน้ำ มอก.) and catch basins (บ่อพัก คสล.).\n" +

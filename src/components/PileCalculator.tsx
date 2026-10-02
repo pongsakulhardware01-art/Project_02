@@ -167,9 +167,9 @@ export default function PileCalculator({
     } else if (pileType === "fence4") {
       pileNameTh = "เสารั้วลวดหนาม 4\"";
     } else if (isS_Shape) {
-      pileNameTh = `เสาสี่เหลี่ยมตัน S-${pileType.replace("s", "")}`;
+      pileNameTh = `เสาสี่เหลี่ยมตัน S-${pileType.replace("s", "")} ${isJoint ? "(ท่อนต่อ)" : ""}`;
     } else if (isI_Shape) {
-      pileNameTh = `เสาเข็มไอ I-${pileType.replace("i", "")} ${isTis ? "มอก." : ""}`;
+      pileNameTh = `เสาเข็มไอ I-${pileType.replace("i", "")} ${isTis ? "มอก." : ""} ${isJoint ? "(ท่อนต่อ)" : ""}`;
     }
 
     const newCargoItem: WeightItem = {
@@ -258,7 +258,15 @@ export default function PileCalculator({
               <label className="text-sm font-semibold text-neutral-700">ชนิดและขนาดเสาเข็ม</label>
               <select
                 value={pileType}
-                onChange={(e) => setPileType(e.target.value)}
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  setPileType(newType);
+                  const newIsI = newType === "i18" || newType === "i22" || newType === "i26" || newType === "i30" || newType === "i35" || newType === "i40";
+                  const newIsS = newType === "s18" || newType === "s22" || newType === "s26" || newType === "s30" || newType === "s35" || newType === "s40";
+                  if ((newIsI || newIsS) && typeof pileLength === "number" && pileLength >= 8) {
+                    setPileConnection("joint");
+                  }
+                }}
                 className="w-full p-3 bg-neutral-50 hover:bg-white focus:bg-white transition border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828]"
               >
                 {customPiles.length > 0 && (
@@ -298,15 +306,54 @@ export default function PileCalculator({
             {/* Connection option for I-shapes & S-piles */}
             {hasConnectionOption && (
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-neutral-700">ลักษณะท่อนเสาเข็ม</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-neutral-700">ลักษณะท่อนเสาเข็ม</label>
+                  {typeof pileLength === "number" && pileLength >= 8 && (
+                    <span className="text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Sparkles size={11} className="text-amber-600" />
+                      ปรับเป็นท่อนต่ออัตโนมัติ (≥8ม.)
+                    </span>
+                  )}
+                </div>
                 <select
                   value={pileConnection}
                   onChange={(e) => setPileConnection(e.target.value)}
                   className="w-full p-3 bg-neutral-50 hover:bg-white focus:bg-white transition border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828]"
                 >
                   <option value="single">ท่อนเดียว (Single Pile)</option>
-                  <option value="joint">ท่อนต่อเชื่อมหูสลัก (Joint Pile)</option>
+                  <option value="joint">
+                    ท่อนต่อเชื่อมหูสลัก (Joint Pile) {typeof pileLength === "number" && pileLength >= 8 ? "✨ (ระบบปรับให้อัตโนมัติ)" : ""}
+                  </option>
                 </select>
+
+                {/* Info badge when length >= 8 */}
+                {typeof pileLength === "number" && pileLength >= 8 && (
+                  <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2.5">
+                    <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-bold flex items-center gap-1.5 flex-wrap">
+                        <span>เสาเข็มความยาวเกิน 8 เมตร ปรับเป็นท่อนต่อ (Joint) ให้อัตโนมัติ</span>
+                        <span className="bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded text-[10px] font-mono">
+                          ความยาว {pileLength.toFixed(1)} ม.
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-700 font-light mt-0.5">
+                        ตามมาตรฐานการขนส่งทางหลวงและความปลอดภัยของโรงงาน เสาเข็มความยาวเกิน 8 เมตรขึ้นไปจะจัดส่งแบบท่อนต่อเชื่อมหูเพลท
+                        {pileConnection === "single" ? (
+                          <span className="font-semibold text-amber-900 ml-1">(ปัจจุบันคุณสลับเป็นท่อนเดียวแบบพิเศษ)</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setPileConnection("single")}
+                            className="text-[#C62828] underline font-semibold ml-1 cursor-pointer hover:text-red-800"
+                          >
+                            คลิกที่นี่หากต้องการสลับเป็นท่อนเดียว
+                          </button>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -329,14 +376,20 @@ export default function PileCalculator({
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold text-neutral-700 flex justify-between">
                 <span>ความยาวเสาต่อท่อน (เมตร)</span>
-                <span className="text-xs text-neutral-500 font-mono">ใส่แบบทศนิยมได้</span>
+                <span className="text-xs text-neutral-500 font-mono">เกิน 8 ม. ขึ้นไประบบปรับเป็นท่อนต่อ</span>
               </label>
               <input
                 type="number"
                 value={pileLength}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setPileLength(val === "" ? "" : parseFloat(val));
+                  const num = val === "" ? "" : parseFloat(val);
+                  setPileLength(num);
+                  if (typeof num === "number" && num >= 8 && hasConnectionOption) {
+                    setPileConnection("joint");
+                  } else if (typeof num === "number" && num < 8 && num > 0 && hasConnectionOption && pileConnection === "joint") {
+                    setPileConnection("single");
+                  }
                 }}
                 step="0.1"
                 className="w-full p-3 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200 rounded-xl font-medium text-neutral-800 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-[#C62828]"
