@@ -27,9 +27,11 @@ import {
   Check,
   Truck,
   MapPin,
-  Star
+  Star,
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import html2canvas from "html2canvas";
 
 interface UniversalBatchCalculatorProps {
   settings: AppSettings;
@@ -66,6 +68,8 @@ export default function UniversalBatchCalculator({
   onSelectSupplier,
   onNavigateToSettings
 }: UniversalBatchCalculatorProps) {
+  const quotationRef = useRef<HTMLDivElement>(null);
+
   // Items in the table state
   const [items, setItems] = useState<UniversalBatchItem[]>([]);
 
@@ -1397,20 +1401,20 @@ export default function UniversalBatchCalculator({
               </div>
             </div>
 
-            {/* Main Spreadsheet Scroll Container */}
-            <div className="overflow-x-auto w-full border border-neutral-200/80 rounded-2xl shadow-sm bg-white">
-              <table className="w-full text-left border-collapse min-w-[980px]">
+            {/* Main Spreadsheet Container */}
+            <div className="w-full border border-neutral-200/80 rounded-2xl shadow-sm bg-white">
+              <table className="w-full text-left border-collapse table-fixed">
                 <thead>
                   <tr className="bg-neutral-50/75 border-b border-neutral-200 text-xs font-bold text-neutral-600 uppercase tracking-wide">
-                    <th className="py-3.5 px-3 w-[14%] min-w-[130px] font-semibold">หมวดหมู่สินค้า</th>
-                    <th className="py-3.5 px-3 w-[24%] min-w-[210px] font-semibold">รุ่นโมเดล & ตราสินค้า</th>
-                    <th className="py-3.5 px-2 w-[7%] min-w-[65px] text-center font-semibold">ยาว (ม.)</th>
-                    <th className="py-3.5 px-2 w-[7%] min-w-[60px] text-center font-semibold">จำนวน</th>
-                    <th className="py-3.5 px-3 w-[15%] min-w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
-                    <th className="py-3.5 px-2 w-[10%] min-w-[105px] text-center font-semibold">น้ำหนัก/ม. (กก.)</th>
-                    <th className="py-3.5 px-2 w-[10%] min-w-[105px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
-                    <th className="py-3.5 px-3 w-[13%] min-w-[135px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
-                    <th className="py-3.5 px-2 w-[40px] text-center"></th>
+                    <th className="py-3.5 px-3 w-[13%] font-semibold">หมวดหมู่สินค้า</th>
+                    <th className="py-3.5 px-3 w-[21%] font-semibold">รุ่นโมเดล & ตราสินค้า</th>
+                    <th className="py-3.5 px-2 w-[7%] text-center font-semibold">ยาว (ม.)</th>
+                    <th className="py-3.5 px-2 w-[7%] text-center font-semibold">จำนวน</th>
+                    <th className="py-3.5 px-3 w-[14%] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
+                    <th className="py-3.5 px-2 w-[11%] text-center font-semibold">น้ำหนัก/ม. (กก.)</th>
+                    <th className="py-3.5 px-2 w-[11%] text-center font-semibold">ราคาตั้งอ้างอิง</th>
+                    <th className="py-3.5 px-3 w-[13%] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
+                    <th className="py-3.5 px-2 w-[3%] text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 text-xs">
@@ -1576,7 +1580,7 @@ export default function UniversalBatchCalculator({
                             onChange={(e) => editLineItem(row.id, "length", e.target.value === "" ? "" : parseFloat(e.target.value))}
                             step="0.1"
                             placeholder="ยาว"
-                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-xs sm:text-sm"
                           />
                         </td>
 
@@ -1587,7 +1591,7 @@ export default function UniversalBatchCalculator({
                             value={row.count}
                             onChange={(e) => editLineItem(row.id, "count", e.target.value === "" ? "" : parseInt(e.target.value, 10))}
                             placeholder="จำนวน"
-                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                            className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-xs sm:text-sm"
                           />
                         </td>
 
@@ -1685,7 +1689,7 @@ export default function UniversalBatchCalculator({
                               value={row.customWeightPerMeter ?? ""}
                               onChange={(e) => editLineItem(row.id, "customWeightPerMeter", e.target.value === "" ? "" : parseFloat(e.target.value))}
                               placeholder={fmt(row.unitWeight)}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none text-neutral-850"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-xs sm:text-sm text-neutral-850"
                               title="กำหนดน้ำหนักต่อเมตรเอง (กิโลกรัม/เมตร) หรือปล่อยว่างเพื่อใช้ตามสูตรทั่วไป"
                             />
                             <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">กก./ม.</span>
@@ -1700,7 +1704,7 @@ export default function UniversalBatchCalculator({
                               value={row.customStandardRate ?? ""}
                               onChange={(e) => editLineItem(row.id, "customStandardRate", e.target.value === "" ? "" : parseFloat(e.target.value))}
                               placeholder={String(row.category === "slab" ? (row.model === "m.o.c" ? settings.prices.mocBoardPrice : settings.prices.normalBoardPrice) : row.defaultStandardRate)}
-                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-xs sm:text-sm"
                               title={`ปรับแก้ไขราคาตั้งอ้างอิงตรงนี้ได้เลย (ต่อ ${row.standardRateUnit})`}
                             />
                             <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">/{row.standardRateUnit}</span>
@@ -1715,7 +1719,7 @@ export default function UniversalBatchCalculator({
                               value={row.customPrice}
                               onChange={(e) => editLineItem(row.id, "customPrice", e.target.value === "" ? "" : parseFloat(e.target.value))}
                               placeholder={fmt(row.computedStandardUnitVal)}
-                              className="p-2 border border-red-200 rounded-xl text-xs font-black font-mono text-center w-full focus:ring-2 focus:ring-red-400/20 focus:outline-none text-[#C62828] bg-red-50/30 transition shadow-inner"
+                              className="p-2 border border-red-200 rounded-xl text-xs sm:text-sm font-black font-mono text-center w-full focus:ring-2 focus:ring-red-400/20 focus:outline-none text-[#C62828] bg-red-50/30 transition shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               title="ระบุราคาที่จ้างจริงต่อหน่วยชิ้น (เลือกกรอกราคาต่อชิ้นทับได้)"
                             />
                             <button
@@ -1840,6 +1844,7 @@ export default function UniversalBatchCalculator({
       {showQuotationModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <motion.div
+            ref={quotationRef}
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl border border-neutral-200 flex flex-col justify-between space-y-6"
@@ -1941,16 +1946,33 @@ export default function UniversalBatchCalculator({
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowQuotationModal(false)}
-                  className="py-2 px-4 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-neutral-600 font-bold text-xs transition"
+                  className="py-2 px-4 rounded-xl border border-neutral-300 hover:bg-neutral-50 text-neutral-600 font-bold text-xs transition cursor-pointer"
                 >
                   ปิดหน้าต่าง ❌
                 </button>
                 <button
-                  onClick={() => window.print()}
-                  className="py-2 px-5 bg-neutral-900 text-white rounded-xl font-bold text-xs hover:bg-neutral-850 transition flex items-center gap-1 shadow-sm"
+                  onClick={async () => {
+                    if (!quotationRef.current) return;
+                    try {
+                      const canvas = await html2canvas(quotationRef.current, {
+                        scale: 2.5,
+                        useCORS: true,
+                        backgroundColor: "#ffffff",
+                      });
+                      const image = canvas.toDataURL("image/jpeg", 0.95);
+                      const link = document.createElement("a");
+                      link.href = image;
+                      link.download = `ใบประเมินราคา_พงษ์สกุล_${Math.random().toString(36).substring(2, 7).toUpperCase()}.jpg`;
+                      link.click();
+                    } catch (err) {
+                      console.error("Export JPG error:", err);
+                      window.print();
+                    }
+                  }}
+                  className="py-2.5 px-5 bg-gradient-to-r from-red-650 to-red-850 text-white rounded-xl font-bold text-xs hover:opacity-95 transition flex items-center gap-1.5 shadow-md cursor-pointer"
                 >
-                  <Printer size={13} />
-                  พิมพ์ออกมาทางเครื่องมือ 📄
+                  <Download size={13} />
+                  <span>ส่งออกรูป JPG คมชัดสูง 📸</span>
                 </button>
               </div>
             </div>

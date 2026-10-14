@@ -688,7 +688,7 @@ export default function App() {
         </header>
 
         {/* Content Box wrapper */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl w-full mx-auto space-y-6 pb-28 lg:pb-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 max-w-[1750px] w-full mx-auto space-y-6 pb-28 lg:pb-8">
           <AnimatePresence mode="wait">
             {currentScreen === "menu" ? (
               <motion.div
@@ -1063,7 +1063,7 @@ export default function App() {
 
         {/* Cohesive Brand Footer */}
         <footer className="bg-neutral-900 text-neutral-400 py-8 border-t border-neutral-800 text-xs sm:text-sm mt-auto hidden lg:block">
-          <div className="max-w-7xl mx-auto px-6 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="max-w-[1750px] mx-auto px-6 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="text-center md:text-left space-y-1">
               <span className="font-extrabold font-display text-white uppercase tracking-wider text-sm block">
                 บริษัท พงษ์สกุลฮาร์ดแวร์ จำกัด
