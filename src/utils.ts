@@ -228,3 +228,15 @@ export function getTruckAllocationOptions(weightKg: number): TruckOption[] {
   return options;
 }
 
+export function normalizeWireCount(raw: any): "4" | "5" | "6" | "7" | "8" | "5_mm_5" | "auto" {
+  if (!raw || raw === "auto") return "auto";
+  const s = String(raw).trim().toLowerCase();
+  if (s.includes("5_mm") || s.includes("5มม") || s.includes("5 มม") || s.includes("5 มิล")) return "5_mm_5";
+  if (s.includes("8")) return "8";
+  if (s.includes("7")) return "7";
+  if (s.includes("6")) return "6";
+  if (s.includes("5")) return "5";
+  if (s.includes("4")) return "4";
+  return "auto";
+}
+

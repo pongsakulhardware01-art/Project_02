@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
 import { AppSettings, WeightItem, CustomProduct } from "../types";
-import { fmt, roundToBeautifulPrice, compressImage } from "../utils";
+import { fmt, roundToBeautifulPrice, compressImage, normalizeWireCount } from "../utils";
 import SupplierQuickSelector from "./SupplierQuickSelector";
 import DeliveryDistanceWidget from "./DeliveryDistanceWidget";
 import AddProductModal from "./AddProductModal";
@@ -687,7 +687,7 @@ export default function UniversalBatchCalculator({
             model: item.model || "normal",
             length: itemLen,
             count: typeof item.count === "number" ? item.count : 10,
-            wireCount: item.wireCount || "auto",
+            wireCount: normalizeWireCount(item.wireCount),
             tisStandard: item.tisStandard || "no_tis",
             connectionType: resolvedConn,
             hcWidth: item.hcWidth || 0.35,
@@ -763,7 +763,7 @@ export default function UniversalBatchCalculator({
             model: item.model || "normal",
             length: itemLen,
             count: typeof item.count === "number" ? item.count : 10,
-            wireCount: item.wireCount || "auto",
+            wireCount: normalizeWireCount(item.wireCount),
             tisStandard: item.tisStandard || "no_tis",
             connectionType: resolvedConn,
             hcWidth: item.hcWidth || 0.35,
