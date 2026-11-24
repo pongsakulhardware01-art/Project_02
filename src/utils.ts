@@ -43,9 +43,9 @@ export function getLoadCapacity(length: number, wireCount: string): number {
 
 export function compressImage(
   fileOrBase64: File | string,
-  maxWidth = 1400,
-  maxHeight = 1400,
-  quality = 0.85
+  maxWidth = 1024,
+  maxHeight = 1024,
+  quality = 0.80
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const processSrc = (src: string) => {

@@ -654,18 +654,27 @@ export default function UniversalBatchCalculator({
     setSuccessMessage(null);
 
     try {
-      // Hit backend API to parse
-      const res = await fetch("/api/parse-universal-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          text: rawTextLines,
-          customProducts: allCustomProducts
-        })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      let res: Response;
+      try {
+        // Hit backend API to parse
+        res = await fetch("/api/parse-universal-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: rawTextLines,
+            customProducts: allCustomProducts
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!res.ok) {
-        throw new Error("หมดเวลาเชื่อมต่อ หรือระบบหลังบ้านอยู่ระหว่างปรับปรุงเซิร์ฟเวอร์");
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || `ระบบหลังบ้านตอบกลับผิดพลาด (${res.status})`);
       }
 
       const responseData = await res.json();
@@ -709,7 +718,11 @@ export default function UniversalBatchCalculator({
         setItems((prev) => [...prev, ...clientItems]);
         setSuccessMessage(`สลับไปรันออฟไลน์: นำเข้าแผ่นคอนกรีต/เสา ${clientItems.length} รายการลงตารางงบประมาณสำเร็จ! 💻⚡`);
       } else {
-        setScanError("ไม่สามารถแกะแยกสเปกในข้อความ กรุณาปรับเปลี่ยนข้อความให้ระบุความยาวและจำนวนที่แจ่มแจ้งขึ้น");
+        setScanError(
+          err?.name === "AbortError"
+            ? "หมดเวลาเชื่อมต่อระบบคลาวด์ AI (เกิน 45 วินาที) กรุณาลองใหม่อีกครั้ง"
+            : (err?.message || "ไม่สามารถแกะแยกสเปกในข้อความ กรุณาปรับเปลี่ยนข้อความให้ระบุความยาวและจำนวนที่แจ่มแจ้งขึ้น")
+        );
       }
     } finally {
       setIsScanning(false);
@@ -729,21 +742,48 @@ export default function UniversalBatchCalculator({
 
     try {
       const base64Data = selectedImage.split(",")[1] || selectedImage;
-      const res = await fetch("/api/scan-universal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: base64Data,
-          mimeType: imageMimeType || "image/jpeg",
-          customProducts: allCustomProducts
-        })
-      });
+      const detectedMime = selectedImage.match(/^data:([^;]+);/)?.[1] || imageMimeType || "image/jpeg";
 
-      if (!res.ok) {
-        throw new Error("หมดเวลาเชื่อมต่อระบบคลาวด์ AI หรือหลังบ้านไม่ได้ติดตั้งใช้งาน");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      let res: Response;
+      try {
+        res = await fetch("/api/scan-universal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: base64Data,
+            mimeType: detectedMime,
+            customProducts: allCustomProducts
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
       }
 
-      const data = await res.json();
+      const rawText = await res.text().catch(() => "");
+      const looksLikeHtml = rawText.trim().startsWith("<!DOCTYPE") || rawText.trim().startsWith("<html");
+
+      if (!res.ok || looksLikeHtml) {
+        let serverErr = "";
+        if (!looksLikeHtml && rawText) {
+          try {
+            const errJson = JSON.parse(rawText);
+            if (errJson?.error) serverErr = errJson.error;
+          } catch {
+            // ignore JSON parse error
+          }
+        }
+        throw new Error(
+          serverErr ||
+          (looksLikeHtml || res.status === 404
+            ? "ไม่พบบริการหลังบ้านสำหรับสแกนภาพ (404) แนะนำสลับใช้โหมด 'พิมพ์ข้อความ' เพื่อวิเคราะห์ออฟไลน์แทนครับ"
+            : `การเชื่อมต่อระบบ AI ขัดข้อง (รหัส ${res.status}) กรุณาลองใหม่อีกครั้ง`)
+        );
+      }
+
+      const data = JSON.parse(rawText);
       if (data.items && Array.isArray(data.items)) {
         if (data.items.length === 0) {
           setScanError("ระบบวิเคราะห์ภาพสเปกสำเร็จ แต่ไม่แกะข้อมูลพบรายการแผ่นคอนกรีตอัดแรง/เสาเข็มที่สอดคล้อง แนะนำปรับภาพถ่ายให้ใกล้ขึ้น");
@@ -777,9 +817,13 @@ export default function UniversalBatchCalculator({
       } else {
         throw new Error("ระบบ AI ไม่ตอบรับข้อมูลที่เป็นโครงสร้างที่ถูกต้อง");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setScanError(err.message || "เกิดปัญหาในการวิเคราะห์ภาพจากสเปกออนไลน์");
+      setScanError(
+        err?.name === "AbortError"
+          ? "หมดเวลาเชื่อมต่อระบบคลาวด์ AI (เกิน 45 วินาที) กรุณาลองสแกนใหม่อีกครั้ง"
+          : (err?.message || "เกิดปัญหาในการวิเคราะห์ภาพจากสเปกออนไลน์")
+      );
     } finally {
       setIsScanning(false);
     }

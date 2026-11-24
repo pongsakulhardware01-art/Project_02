@@ -1,9 +1,9 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 function getGenAIClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("ไม่พบการตั้งค่า GEMINI_API_KEY ในระบบเซิร์ฟเวอร์ กรุณากำหนดค่าปุ่มคำสั่งหรือ Settings ก่อนใช้งาน");
+    throw new Error("ไม่พบการตั้งค่า GEMINI_API_KEY ในระบบเซิร์ฟเวอร์ กรุณาตรวจสอบในเมนู Settings > Secrets");
   }
 
   return new GoogleGenAI({
@@ -12,18 +12,87 @@ function getGenAIClient(): GoogleGenAI {
       headers: {
         "User-Agent": "aistudio-build",
       },
+      timeout: 35000,
     },
   });
 }
 
-const MODELS_TO_TRY = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
+const MODEL_CONFIGS = [
+  { name: "gemini-3.1-flash-lite", thinkingLevel: ThinkingLevel.MINIMAL, timeoutMs: 12000 },
+  { name: "gemini-4-hydrogen", thinkingLevel: ThinkingLevel.LOW, timeoutMs: 25000 },
+  { name: "gemini-4-hydrogen", thinkingLevel: ThinkingLevel.LOW, timeoutMs: 25000, backoffMs: 800 },
+];
+
+async function generateJsonWithFallback(
+  contents: any,
+  systemInstruction: string,
+  responseSchema: any
+): Promise<any> {
+  const ai = getGenAIClient();
+  let lastError: any = null;
+
+  for (const modelCfg of MODEL_CONFIGS) {
+    if ("backoffMs" in modelCfg && modelCfg.backoffMs) {
+      await new Promise((r) => setTimeout(r, modelCfg.backoffMs));
+    }
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const apiPromise = ai.models.generateContent({
+        model: modelCfg.name,
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema,
+          thinkingConfig: {
+            thinkingLevel: modelCfg.thinkingLevel,
+          },
+        },
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`Timeout after ${modelCfg.timeoutMs}ms on ${modelCfg.name}`));
+        }, modelCfg.timeoutMs);
+      });
+
+      const response = await Promise.race([apiPromise, timeoutPromise]);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+
+      if (response && response.text) {
+        return JSON.parse(response.text.trim());
+      }
+    } catch (err: any) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      const msg = err?.message || String(err);
+      console.warn(`Error with model ${modelCfg.name}:`, msg);
+      lastError = err;
+
+      // Fail fast for invalid API key or permission errors
+      if (/API_KEY_INVALID|PERMISSION_DENIED|"code":400|"code":403/i.test(msg)) {
+        throw new Error("API Key ไม่ถูกต้องหรือไม่มีสิทธิ์ใช้งาน กรุณาตรวจสอบใน Settings > Secrets");
+      }
+    }
+  }
+
+  const finalMsg = lastError?.message || String(lastError || "");
+  if (/RESOURCE_EXHAUSTED|"code":429/i.test(finalMsg)) {
+    throw new Error("โควต้าการใช้งาน AI เต็มชั่วคราว (429) กรุณารอสักครู่แล้วลองใหม่อีกครั้ง");
+  }
+  if (/UNAVAILABLE|"code":503|high demand/i.test(finalMsg)) {
+    throw new Error("เซิร์ฟเวอร์ AI มีผู้ใช้งานหนาแน่นชั่วคราว (503) กรุณาลองกดสแกนใหม่อีกครั้งครับ");
+  }
+  if (/Timeout/i.test(finalMsg)) {
+    throw new Error("การประมวลผล AI ใช้เวลานานเกินกำหนด กรุณาลองลดขนาดภาพหรือสแกนใหม่อีกครั้ง");
+  }
+
+  throw lastError || new Error("ไม่สามารถเชื่อมต่อระบบวิเคราะห์ AI ได้ กรุณาลองใหม่อีกครั้ง");
+}
 
 /**
  * Scan prestressed concrete slabs from an image (handwritten note, table screenshot, or quotation)
  */
 export async function scanSlabsFromImage(image: string, mimeType: string) {
-  const ai = getGenAIClient();
-
   const imagePart = {
     inlineData: {
       mimeType,
@@ -33,175 +102,100 @@ export async function scanSlabsFromImage(image: string, mimeType: string) {
 
   const systemInstruction =
     "You are an expert material estimator specializing in precast prestressed concrete slabs (แผ่นพื้นคอนกรีตสำเร็จรูปอัดแรง) for construction projects. " +
-    "Your task is to analyze the image (which could be a handwritten list, a printed quotation page, table screenshot, or messages list) and extract a list of precast slabs. " +
-    "Slabs normally have length in meters, count/quantity in sheet units. Standard width is 0.35m (35 centimeters). " +
-    "Detect specifications carefully: length, count, optional custom price per square meter (ราคาต่อตารางเมตร บาท/ตร.ม. - ไม่รวมลวด ตั้งต้น) if explicitly listed, wireCount if mentioned, and a title label. " +
-    "Only extract precast concrete slab (แผ่นพื้น หรือ แผ่นพื้นสำเร็จรูป) items, ignore other materials. Format output strictly according to the requested JSON response schema.";
+    "Analyze the image (handwritten list, printed quotation, table screenshot, or chat) and extract all precast concrete slabs (แผ่นพื้น/แผ่นพื้นสำเร็จรูป). " +
+    "Standard width is 0.35m (35cm). Extract length in meters, quantity (count), boardType ('normal' or 'm.o.c'), " +
+    "wireCount ('4', '5', '6', '7', '8', '5_mm_5', or 'auto' if unspecified — read exact wire count e.g. ลวด 4 เส้น -> '4', ลวด 5 เส้น -> '5', ลวด 5 มม. -> '5_mm_5'), " +
+    "optional customPriceSqm (ราคา/ตร.ม. if explicitly shown), and a short Thai label. Ignore non-slab items.";
 
   const prompt =
-    "Please read this image carefully, extract all precast concrete slabs (แผ่นพื้นสำเร็จรูป) lists/rows you can find, and formulate them in the requested JSON structure. " +
-    "Ensure all lengths are correctly parsed as decimal numbers in meters (e.g. 2.0, 3.5, etc.), counts as integers (number of slabs), " +
-    "type as 'normal' or 'm.o.c' based on keywords, and any listed custom price/rate in Thai Baht.";
+    "Extract all precast concrete slabs from this image into the JSON schema. Ensure lengths are positive numbers in meters, counts are positive integers, and wireCount accurately matches the document.";
 
-  let lastError = null;
-
-  for (const modelName of MODELS_TO_TRY) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [imagePart, { text: prompt }],
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              slabs: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    length: {
-                      type: Type.NUMBER,
-                      description: "ความยาวของแผ่นพื้นกี่เมตร (เมตร)",
-                    },
-                    count: {
-                      type: Type.INTEGER,
-                      description: "จำนวนแผ่นพื้นกี่แผ่น (แผ่น / ชิ้น)",
-                    },
-                    boardType: {
-                      type: Type.STRING,
-                      description: "ประเภทแผ่นพื้น: 'normal' (ธรรมดา) หรือ 'm.o.c' (มอก.)",
-                    },
-                    customPriceSqm: {
-                      type: Type.NUMBER,
-                      description: "ราคาเฉพาะตารางเมตรกรณีที่ระบุในภาพโดยตรง ถ้าไม่มีให้กำหนดเป็น 0 หรือ null",
-                    },
-                    wireCount: {
-                      type: Type.STRING,
-                      description: "จำนวนลวดสายอัดแรง ถ้ามีระบุ เช่น '4', '5', '6', '7', '8' หรือถ้าไม่มีใช้ 'auto'",
-                    },
-                    label: {
-                      type: Type.STRING,
-                      description: "บันทึกย่อหรือรายละเอียดสั้นๆ รวบรวมจากภาพ เช่น 'แผ่นพื้น 2.50 ม. (สายไฟ 4 เส้น)'",
-                    },
-                  },
-                  required: ["length", "count"],
-                },
-              },
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      slabs: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            length: {
+              type: Type.NUMBER,
+              description: "ความยาวของแผ่นพื้นกี่เมตร (เมตร)",
             },
-            required: ["slabs"],
+            count: {
+              type: Type.INTEGER,
+              description: "จำนวนแผ่นพื้นกี่แผ่น (แผ่น / ชิ้น)",
+            },
+            boardType: {
+              type: Type.STRING,
+              description: "ประเภทแผ่นพื้น: 'normal' (ธรรมดา) หรือ 'm.o.c' (มอก.)",
+            },
+            customPriceSqm: {
+              type: Type.NUMBER,
+              description: "ราคาเฉพาะตารางเมตรกรณีที่ระบุในภาพโดยตรง ถ้าไม่มีให้กำหนดเป็น 0",
+            },
+            wireCount: {
+              type: Type.STRING,
+              description: "จำนวนลวดสายอัดแรง ถ้ามีระบุ เช่น '4', '5', '6', '7', '8', '5_mm_5' หรือถ้าไม่มีใช้ 'auto'",
+            },
+            label: {
+              type: Type.STRING,
+              description: "บันทึกย่อหรือรายละเอียดสั้นๆ รวบรวมจากภาพ",
+            },
           },
+          required: ["length", "count"],
         },
-      });
+      },
+    },
+    required: ["slabs"],
+  };
 
-      if (response && response.text) {
-        return JSON.parse(response.text.trim());
-      }
-    } catch (err: any) {
-      console.warn(`Error with model ${modelName}:`, err?.message || err);
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("ไม่มีข้อมูลตอบรับจาก Gemini API หลังจากพยายามทุกโมเดลแล้ว");
+  return generateJsonWithFallback([imagePart, { text: prompt }], systemInstruction, responseSchema);
 }
 
 /**
  * Parse slab descriptions from raw unstructured Thai text lines
  */
 export async function parseSlabsFromText(text: string, normalPrice?: number, mocPrice?: number) {
-  const ai = getGenAIClient();
-
   const systemInstruction =
-    "You are an expert material estimator specializing in precast prestressed concrete slabs (แผ่นพื้นคอนกรีตสำเร็จรูปอัดแรง) for construction projects in Thailand. " +
-    "Your task is to analyze a list of concrete slab descriptions/specifications provided by the user (separated by lines). " +
-    "Slabs have key attributes: length (เมตร), quantity/count (แผ่น/ชิ้น) and optionally wire counts (ลวด 4 เส้น, 5 เส้น, etc.). Standard width is 35cm (0.35m). " +
-    "For each line, extract the length of the slab in meters as a decimal number, the quantity (count, defaults to 1 if not specified), slab type ('normal' or 'm.o.c'), " +
-    "the wire count if mentioned ('4', '5', '6', '7', '8' or 'auto'), and a short friendly title label in Thai. " +
-    "The user has also provided manual unit rates (ราคา/ตรม.): " +
-    `- For 'normal' slabs: ${normalPrice ?? 210} Baht/sqm ` +
-    `- For 'm.o.c' slabs: ${mocPrice ?? 230} Baht/sqm. ` +
-    "Your output must be a JSON array of slabs. Each slab must contain boardType, length, count, and customPriceSqm populated with either the specified normal or moc price based on its type.";
+    "You are an expert material estimator specializing in precast prestressed concrete slabs (แผ่นพื้นคอนกรีตสำเร็จรูปอัดแรง) in Thailand. " +
+    "Parse each line into: length (meters), count (integer, default 1), boardType ('normal' or 'm.o.c'), " +
+    "wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto'), customPriceSqm " +
+    `('normal': ${normalPrice ?? 210}, 'm.o.c': ${mocPrice ?? 230}), and a short Thai label.`;
 
   const prompt =
-    `Please parse the following list of slabs text lines, group or list them, and map them to the correct attributes.\n` +
-    `Text to parse:\n${text}\n\n` +
-    `Standard rates to apply:\n` +
-    `- Normal sheet: ${normalPrice ?? 210} Baht/sqm\n` +
-    `- M.O.C. sheet: ${mocPrice ?? 230} Baht/sqm\n\n` +
-    `Output strictly according to the requested JSON response schema. Ensure lengths are floating point numbers (e.g. 2.0, 3.5, etc.) and count is an integer.`;
+    `Parse the following slab descriptions:\n${text}\n\n` +
+    `Normal rate: ${normalPrice ?? 210} Baht/sqm, M.O.C. rate: ${mocPrice ?? 230} Baht/sqm.`;
 
-  let lastError = null;
-
-  for (const modelName of MODELS_TO_TRY) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              slabs: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    length: {
-                      type: Type.NUMBER,
-                      description: "ความยาวของแผ่นพื้นกี่เมตร (เมตร) เช่น 2.00, 3.50",
-                    },
-                    count: {
-                      type: Type.INTEGER,
-                      description: "จำนวนแผ่นพื้นกี่แผ่น (ชิ้น / แผ่น), ปล่อยว่างหรือดีฟอลต์เป็น 1",
-                    },
-                    boardType: {
-                      type: Type.STRING,
-                      description: "ประเภทแผ่นพื้น: 'normal' (ธรรมดา) หรือ 'm.o.c' (มอก.)",
-                    },
-                    customPriceSqm: {
-                      type: Type.NUMBER,
-                      description: "ราคากลางต่อ ตร.ม. ที่ผู้ใช้ระบุ",
-                    },
-                    wireCount: {
-                      type: Type.STRING,
-                      description: "จำนวนลวดสายอัดแรง ถ้ามีในข้อความ เช่น '4', '5', '6', '7', '8' ดีฟอลต์คือ 'auto'",
-                    },
-                    label: {
-                      type: Type.STRING,
-                      description: "บันทึกข้อมูลดั้งเดิมสั้นๆ ของแถว",
-                    },
-                  },
-                  required: ["length", "count", "boardType", "customPriceSqm"],
-                },
-              },
-            },
-            required: ["slabs"],
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      slabs: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            length: { type: Type.NUMBER },
+            count: { type: Type.INTEGER },
+            boardType: { type: Type.STRING },
+            customPriceSqm: { type: Type.NUMBER },
+            wireCount: { type: Type.STRING },
+            label: { type: Type.STRING },
           },
+          required: ["length", "count", "boardType", "customPriceSqm"],
         },
-      });
+      },
+    },
+    required: ["slabs"],
+  };
 
-      if (response && response.text) {
-        return JSON.parse(response.text.trim());
-      }
-    } catch (err: any) {
-      console.warn(`Error with model ${modelName}:`, err?.message || err);
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("ไม่มีข้อมูลตอบรับจาก Gemini API หลังจากพยายามทุกโมเดลแล้ว");
+  return generateJsonWithFallback(prompt, systemInstruction, responseSchema);
 }
 
 /**
  * Universal Scanner: scans all concrete products (slabs, piles, hollow cores, fence posts, drainage pipes/basins, custom products)
  */
 export async function scanUniversalFromImage(image: string, mimeType: string, customProducts: any[] = []) {
-  const ai = getGenAIClient();
-
   const imagePart = {
     inlineData: {
       mimeType,
@@ -212,164 +206,113 @@ export async function scanUniversalFromImage(image: string, mimeType: string, cu
   let customProdInstruction = "";
   if (Array.isArray(customProducts) && customProducts.length > 0) {
     customProdInstruction =
-      "\n6. Category 'custom': User-registered custom products in catalog (สินค้าที่ผู้ใช้เพิ่มเองในระบบ):\n" +
+      "\n6. Category 'custom': User-registered custom products:\n" +
       customProducts
         .map(
           (cp: any) =>
-            `- Model ID: "${cp.id}", ชื่อ: "${cp.name}", สเปก: "${cp.subLabel || ""}", ราคา: ${cp.price} ${cp.unit}, น้ำหนัก: ${cp.weight || 0} ${cp.weightUnit || ""}, หมวด: "${cp.category}"`
+            `- Model ID: "${cp.id}", Name: "${cp.name}", Spec: "${cp.subLabel || ""}", Price: ${cp.price} ${cp.unit}, Category: "${cp.category}"`
         )
         .join("\n") +
-      "\nIf an item in the quotation/note matches any of these User-registered custom products (by name or specification), you MUST set category to 'custom' and model to that product's exact Model ID.\n";
+      "\nIf an item matches any custom product, set category to 'custom' and model to its exact Model ID.\n";
   }
 
   const systemInstruction =
-    "You are an expert material estimator specializing in precast concrete products (แผ่นพื้นสำเร็จรูป, เสาเข็ม, แผ่นกลวง, เสารั้ว, ท่อระบายน้ำ คสล., บ่อพัก คสล.) for construction projects. " +
-    "Your task is to analyze the image (handwritten note, table screenshot, quotation bill) and extract ALL concrete items. " +
-    "Support Categories & Models:\n" +
-    "1. Category 'slab': precast concrete slabs. Model: 'normal' (แผ่นพื้นธรรมดา) or 'm.o.c' (แผ่นพื้น มอก.). Attributes: length (meters), count (quantity), wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto').\n" +
-    "2. Category 'pile': prestressed concrete piles. Model: 'i15', 'i18', 'i22', 'i26', 'i30' (เสาเข็มไอ), 's18', 's22', 's26', 's30', 's35', 's40' (เสาสี่เหลี่ยมตัน), 'hex' (หกเหลี่ยม), 'fence3' (เสารั้ว 3 นิ้ว), 'fence4' (เสารั้ว 4 นิ้ว). Attributes: length (meters), count (quantity), tisStandard ('tis' or 'no_tis'), connectionType ('single' or 'joint' for I-piles and S-piles; if length >= 8 meters, connectionType MUST default to 'joint').\n" +
-    "3. Category 'hollow_core': precast hollow core slabs. Model: 'hc'. Attributes: length (meters), count (quantity), thickness (optional).\n" +
-    "4. Category 'fence': fence posts. Model: 'fence3' (หน้า 3\" นิ้ว) or 'fence4' (หน้า 4\" นิ้ว). Attributes: length (meters), count (quantity).\n" +
-    "5. Category 'drainage': concrete pipes (ท่อระบายน้ำ คสล.) and catch basins (บ่อพัก คสล.). \n" +
-    "   - Pipes: Model MUST be 'pipe030' (30cm / 0.30m), 'pipe040' (40cm), 'pipe050' (50cm), 'pipe060' (60cm), 'pipe080' (80cm), 'pipe100' (100cm), 'pipe120' (120cm), 'pipe150' (150cm). Set tisStandard to 't2' (for มอก.ชั้น 2), 't3' (for มอก.ชั้น 3), or 'no_tis' (ปกติ/คสล.).\n" +
-    "   - Catch basins: Model MUST be 'basin030' (for pipe 30cm), 'basin040', 'basin050', 'basin060', 'basin080', 'basin100', 'basin120'. Length of drainage is 1.0.\n" +
+    "You are an expert Thai construction material estimator for Pongsakul Hardware. " +
+    "Analyze the image and extract ALL precast concrete items into structured JSON.\n" +
+    "Categories & Models:\n" +
+    "1. 'slab': precast concrete slabs (แผ่นพื้นสำเร็จรูป). Model: 'normal' or 'm.o.c' (มอก.). Attributes: length (m), count (int), wireCount ('4','5','6','7','8','5_mm_5', or 'auto' — read exact wire count e.g. ลวด 4 เส้น -> '4', ลวด 5 เส้น -> '5', ลวด 5 มม. -> '5_mm_5').\n" +
+    "2. 'pile': prestressed piles. Model: 'i15','i18','i22','i26','i30','i35','i40' (เสาเข็มไอ), 's18','s22','s26','s30','s35','s40' (เสาสี่เหลี่ยมตัน), 'hex' (หกเหลี่ยม), 'fence3','fence4' (เสารั้ว). tisStandard ('tis'|'no_tis'), connectionType ('single'|'joint'; if length >= 8m, MUST default to 'joint').\n" +
+    "3. 'hollow_core': hollow core slabs (แผ่นกลวง). Model: 'hc'.\n" +
+    "4. 'fence': fence posts. Model: 'fence3' or 'fence4'.\n" +
+    "5. 'drainage': pipes ('pipe030','pipe040','pipe050','pipe060','pipe080','pipe100','pipe120','pipe150' with tisStandard 't2'|'t3'|'no_tis') and catch basins ('basin030'..'basin120'), length 1.0.\n" +
     customProdInstruction +
-    "Ignore other construction materials (sand, cement bricks, steel rebars, labor fees) and only extract precast concrete elements manufactured by Pongsakul.";
+    "Ignore unrelated items (sand, cement, rebar, labor). Provide concise Thai labels.";
 
   const prompt =
-    "Please read this image carefully, extract all concrete slabs, piles, hollow cores, fence posts, drainage pipes/basins, and custom products lists/rows you can find, and formulate them in the requested JSON structure. " +
-    "Ensure lengths and counts are always positive numbers, handle unit rates (customPrice) in Baht if listed directly, and provide Thai description labels.";
+    "Extract all concrete items from this image carefully. Ensure length (meters) and count (integer) are positive, wireCount matches the document exactly, and include customPrice if unit price is listed.";
 
-  let lastError = null;
-
-  for (const modelName of MODELS_TO_TRY) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [imagePart, { text: prompt }],
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              items: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    category: { type: Type.STRING },
-                    model: { type: Type.STRING },
-                    length: { type: Type.NUMBER },
-                    count: { type: Type.INTEGER },
-                    wireCount: { type: Type.STRING },
-                    tisStandard: { type: Type.STRING },
-                    connectionType: { type: Type.STRING },
-                    customPrice: { type: Type.NUMBER },
-                    label: { type: Type.STRING },
-                  },
-                  required: ["category", "model", "length", "count"],
-                },
-              },
-            },
-            required: ["items"],
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      items: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            category: { type: Type.STRING },
+            model: { type: Type.STRING },
+            length: { type: Type.NUMBER },
+            count: { type: Type.INTEGER },
+            wireCount: { type: Type.STRING },
+            tisStandard: { type: Type.STRING },
+            connectionType: { type: Type.STRING },
+            customPrice: { type: Type.NUMBER },
+            label: { type: Type.STRING },
           },
+          required: ["category", "model", "length", "count"],
         },
-      });
+      },
+    },
+    required: ["items"],
+  };
 
-      if (response && response.text) {
-        return JSON.parse(response.text.trim());
-      }
-    } catch (err: any) {
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("ไม่มีข้อมูลสรุปตอบสนองจากการประมวลผลรูปภาพระบบคลาวด์");
+  return generateJsonWithFallback([imagePart, { text: prompt }], systemInstruction, responseSchema);
 }
 
 /**
  * Universal Text Parser: parses multi-line descriptions of any concrete products
  */
 export async function parseUniversalFromText(text: string, customProducts: any[] = []) {
-  const ai = getGenAIClient();
-
   let customProdInstruction = "";
   if (Array.isArray(customProducts) && customProducts.length > 0) {
     customProdInstruction =
-      "\n6. Category 'custom': User-registered custom products in catalog (สินค้าที่ผู้ใช้เพิ่มเองในระบบ):\n" +
+      "\n6. Category 'custom': User-registered custom products:\n" +
       customProducts
         .map(
           (cp: any) =>
-            `- Model ID: "${cp.id}", ชื่อ: "${cp.name}", สเปก: "${cp.subLabel || ""}", ราคา: ${cp.price} ${cp.unit}, น้ำหนัก: ${cp.weight || 0} ${cp.weightUnit || ""}, หมวด: "${cp.category}"`
+            `- Model ID: "${cp.id}", Name: "${cp.name}", Spec: "${cp.subLabel || ""}", Price: ${cp.price} ${cp.unit}, Category: "${cp.category}"`
         )
         .join("\n") +
-      "\nIf an item in the text matches any of these User-registered custom products (by name or specification), you MUST set category to 'custom' and model to that product's exact Model ID.\n";
+      "\nIf an item matches any custom product, set category to 'custom' and model to its exact Model ID.\n";
   }
 
   const systemInstruction =
-    "You are an expert material estimator specializing in construction products of Pongsakul Hardware (Thailand). " +
-    "Your task is to parse unstructured, multi-line construction material specifications in Thai, extracting ALL matching concrete products into a structured JSON database.\n" +
-    "Key Classes to Extract:\n" +
-    "1. Category 'slab': precast concrete slabs (แผ่นพื้นสำเร็จ, แผ่นพื้นคอนกรีต). Model: 'normal' or 'm.o.c' (มอก.). Detect wireCount ('4', '5', '6', '7', '8', '5_mm_5' or 'auto'). Width is always 35cm (0.35m).\n" +
-    "2. Category 'pile': precast concrete piles. Model could be I-shape: 'i15', 'i18', 'i22', 'i26', 'i30' OR Solid Square: 's18', 's22', 's26', 's30', 's35', 's40' OR 'hex' (เสาเข็มหกเหลี่ยม) OR fence posts ('fence3', 'fence4'). Detect tisStandard ('tis' / 'no_tis') and connectionType ('single' / 'joint' for I-piles and S-piles; if length >= 8 meters, connectionType MUST default to 'joint').\n" +
-    "3. Category 'hollow_core': hollow core slabs (แผ่นกลวง). Model: 'hc'.\n" +
-    "4. Category 'fence': fence post. Model: 'fence3' (3 นิ้ว) or 'fence4' (4 นิ้ว).\n" +
-    "5. Category 'drainage': concrete drainage pipes (ท่อระบายน้ำ คสล., ท่อระบายน้ำ มอก.) and catch basins (บ่อพัก คสล.).\n" +
-    "   - Pipes: Model MUST be 'pipe030', 'pipe040', 'pipe050', 'pipe060', 'pipe080', 'pipe100', 'pipe120', 'pipe150'. Set tisStandard to 't2', 't3', or 'no_tis'.\n" +
-    "   - Catch basins: Model MUST be 'basin030'..'basin120'. Length of drainage defaults to 1.0.\n" +
+    "You are an expert Thai construction material estimator for Pongsakul Hardware. " +
+    "Parse multi-line Thai construction specifications into structured JSON:\n" +
+    "1. 'slab': precast slabs (แผ่นพื้น). Model: 'normal' or 'm.o.c' (มอก.). wireCount ('4','5','6','7','8','5_mm_5', or 'auto').\n" +
+    "2. 'pile': Model: 'i15'..'i40', 's18'..'s40', 'hex', 'fence3', 'fence4'. tisStandard ('tis'|'no_tis'), connectionType ('single'|'joint'; if length >= 8m, MUST default to 'joint').\n" +
+    "3. 'hollow_core': Model 'hc'.\n" +
+    "4. 'fence': Model 'fence3' or 'fence4'.\n" +
+    "5. 'drainage': pipes ('pipe030'..'pipe150', tisStandard 't2'|'t3'|'no_tis') and catch basins ('basin030'..'basin120'), length 1.0.\n" +
     customProdInstruction +
-    "Extract attributes strictly: category, model, length (in meters as numeric), count (quantity), wireCount, connectionType, tisStandard, optional customPrice/rate if listed directly, and label in Thai.";
+    "Return category, model, length (m), count (int), wireCount, connectionType, tisStandard, optional customPrice, and Thai label.";
 
-  const prompt =
-    `Extract and organize all listed concrete items from this description:\n\n` +
-    `Text:\n${text}\n\n` +
-    `Ensure numbers (length, check counts) are carefully parsed. Output strictly in the requested JSON format.`;
+  const prompt = `Extract and organize all concrete items from:\n\n${text}`;
 
-  let lastError = null;
-
-  for (const modelName of MODELS_TO_TRY) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              items: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    category: { type: Type.STRING },
-                    model: { type: Type.STRING },
-                    length: { type: Type.NUMBER },
-                    count: { type: Type.INTEGER },
-                    wireCount: { type: Type.STRING },
-                    tisStandard: { type: Type.STRING },
-                    connectionType: { type: Type.STRING },
-                    customPrice: { type: Type.NUMBER },
-                    label: { type: Type.STRING },
-                  },
-                  required: ["category", "model", "length", "count"],
-                },
-              },
-            },
-            required: ["items"],
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      items: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            category: { type: Type.STRING },
+            model: { type: Type.STRING },
+            length: { type: Type.NUMBER },
+            count: { type: Type.INTEGER },
+            wireCount: { type: Type.STRING },
+            tisStandard: { type: Type.STRING },
+            connectionType: { type: Type.STRING },
+            customPrice: { type: Type.NUMBER },
+            label: { type: Type.STRING },
           },
+          required: ["category", "model", "length", "count"],
         },
-      });
+      },
+    },
+    required: ["items"],
+  };
 
-      if (response && response.text) {
-        return JSON.parse(response.text.trim());
-      }
-    } catch (err: any) {
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("ไม่มีข้อมูลสเปกตอบสนองจากการระบุของระบบ AI");
+  return generateJsonWithFallback(prompt, systemInstruction, responseSchema);
 }

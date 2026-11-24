@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Dispatch, SetStateAction } from "react";
 import { AppSettings, WeightItem } from "../types";
-import { fmt, getLoadCapacity, roundToBeautifulPrice } from "../utils";
+import { fmt, getLoadCapacity, roundToBeautifulPrice, compressImage, normalizeWireCount } from "../utils";
 import { loadCapacityTable } from "../data";
 import SlabVisualizer from "./SlabVisualizer";
 import SupplierQuickSelector from "./SupplierQuickSelector";
@@ -280,16 +280,24 @@ export default function SlabCalculator({
           const file = items[i].getAsFile();
           if (file) {
             e.preventDefault();
-            setImageMimeType(file.type);
+            setImageMimeType("image/jpeg");
             setScanError(null);
             setSuccessMessage(null);
-            
-            const reader = new FileReader();
-            reader.onload = () => {
-              setSelectedImage(reader.result as string);
-              setSuccessMessage("วางรูปภาพจากคลิปบอร์ดคลิกบอร์ดสำเร็จ! 📋✨ ท่านสามารถกดเริ่มสแกนรูปภาพ หรือสลับไปแท็บเขียนราคาและแปะข้อมูลข้อความได้ทันที");
-            };
-            reader.readAsDataURL(file);
+
+            compressImage(file)
+              .then((compressedBase64) => {
+                setSelectedImage(compressedBase64);
+                setSuccessMessage("วางรูปภาพจากคลิปบอร์ดสำเร็จ! 📋✨ ท่านสามารถกดเริ่มสแกนรูปภาพ หรือสลับไปแท็บเขียนราคาและแปะข้อมูลข้อความได้ทันที");
+              })
+              .catch(() => {
+                setImageMimeType(file.type);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  setSelectedImage(reader.result as string);
+                  setSuccessMessage("วางรูปภาพจากคลิปบอร์ดสำเร็จ! 📋✨ ท่านสามารถกดเริ่มสแกนรูปภาพได้ทันที");
+                };
+                reader.readAsDataURL(file);
+              });
             break;
           }
         }
@@ -312,18 +320,25 @@ export default function SlabCalculator({
       return;
     }
 
-    setImageMimeType(file.type);
+    setImageMimeType("image/jpeg");
     setScanError(null);
     setSuccessMessage(null);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelectedImage(reader.result as string);
-    };
-    reader.onerror = () => {
-      setScanError("เกิดข้อผิดพลาดในการโหลดรูปภาพดังกล่าว");
-    };
-    reader.readAsDataURL(file);
+    compressImage(file)
+      .then((compressedBase64) => {
+        setSelectedImage(compressedBase64);
+      })
+      .catch(() => {
+        setImageMimeType(file.type);
+        const reader = new FileReader();
+        reader.onload = () => {
+          setSelectedImage(reader.result as string);
+        };
+        reader.onerror = () => {
+          setScanError("เกิดข้อผิดพลาดในการโหลดรูปภาพดังกล่าว");
+        };
+        reader.readAsDataURL(file);
+      });
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -347,15 +362,22 @@ export default function SlabCalculator({
       return;
     }
 
-    setImageMimeType(file.type);
+    setImageMimeType("image/jpeg");
     setScanError(null);
     setSuccessMessage(null);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelectedImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    compressImage(file)
+      .then((compressedBase64) => {
+        setSelectedImage(compressedBase64);
+      })
+      .catch(() => {
+        setImageMimeType(file.type);
+        const reader = new FileReader();
+        reader.onload = () => {
+          setSelectedImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      });
   };
 
   const scanProductImage = async () => {
@@ -371,15 +393,24 @@ export default function SlabCalculator({
     try {
       // Pure base64 content omitting metadata header
       const base64Data = selectedImage.split(",")[1] || selectedImage;
+      const detectedMime = selectedImage.match(/^data:([^;]+);/)?.[1] || imageMimeType || "image/jpeg";
 
-      const res = await fetch("/api/scan-slabs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: base64Data,
-          mimeType: imageMimeType || "image/jpeg"
-        })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      let res: Response;
+      try {
+        res = await fetch("/api/scan-slabs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: base64Data,
+            mimeType: detectedMime
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       let textData = "";
       try {
@@ -439,7 +470,7 @@ export default function SlabCalculator({
             count: typeof s.count === "number" && s.count > 0 ? s.count : 1,
             boardType: type,
             customPriceSqm: assignedPrice,
-            wireCount: s.wireCount || "auto",
+            wireCount: normalizeWireCount(s.wireCount),
             label: s.label || `แผ่นพื้นขนาดความยาว ${s.length || "2.0"} เมตร`
           };
         });
@@ -453,7 +484,7 @@ export default function SlabCalculator({
 
     } catch (error: any) {
       console.error(error);
-      setScanError(error.message || "เกิดอุบัติเหตุไม่คาดคิดในการระบุหรือตรวจพบรายการพื้น AI");
+      setScanError(error?.name === "AbortError" ? "หมดเวลาเชื่อมต่อระบบ AI (เกิน 45 วินาที) กรุณาลองใหม่อีกครั้ง" : (error.message || "เกิดอุบัติเหตุไม่คาดคิดในการระบุหรือตรวจพบรายการพื้น AI"));
     } finally {
       setIsScanningImage(false);
     }
@@ -731,7 +762,7 @@ const parseSlabsTextClientSide = (
           count: typeof s.count === "number" ? s.count : 1,
           boardType: s.boardType === "m.o.c" ? "m.o.c" : "normal",
           customPriceSqm: typeof s.customPriceSqm === "number" && s.customPriceSqm > 0 ? s.customPriceSqm : "",
-          wireCount: s.wireCount || "auto",
+          wireCount: normalizeWireCount(s.wireCount),
           label: s.label || `แผ่นพื้น ${s.length} ม.`
         }));
 
